@@ -3,7 +3,11 @@
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
-  "scripts": {},
+  "scripts": {
+    "crawl": "node src/index.js --watch",
+    "crawl:once": "node src/index.js --once",
+    "crawl:fixtures": "node src/verify-snapshots.js"
+  },
   "keywords": [],
   "author": "",
   "license": "ISC",
@@ -11,5 +15,11 @@
   "devDependencies": {
     "@playwright/test": "^1.61.1",
     "@types/node": "^26.1.1"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "playwright": "^1.61.1",
+    "playwright-extra": "^4.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2"
   }
 }
