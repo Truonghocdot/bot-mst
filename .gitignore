@@ -1,0 +1,23 @@
+# Dependency directories
+node_modules/
+jspm_packages/
+web_runtime/
+
+# Playwright specific
+test-results/
+playwright-report/
+blob-report/
+playwright/.local-browsers/
+
+# Local env files
+.env
+.env.local
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
