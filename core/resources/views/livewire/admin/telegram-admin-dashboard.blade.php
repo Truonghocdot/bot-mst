@@ -133,7 +133,7 @@
                         <th>Đánh dấu lúc</th>
                         <th>MST</th>
                         <th>Tên doanh nghiệp</th>
-                        <th>SDT</th>
+                        <th>Người đại diện</th>
                         <th>Chi tiết</th>
                     </tr>
                 </thead>
@@ -145,8 +145,9 @@
                             <td>
                                 <strong>{{ $item->company_name }}</strong>
                                 <div class="muted">Batch #{{ $item->ingestion_batch_id }}</div>
+                                <div class="muted">{{ data_get($item->payload, 'listed_address') ?: '-' }}</div>
                             </td>
-                            <td>{{ $item->phone ?: '-' }}</td>
+                            <td>{{ data_get($item->payload, 'legal_representative') ?: '-' }}</td>
                             <td>
                                 <a class="link-cut" href="{{ $item->detail_url }}" target="_blank" rel="noreferrer">
                                     {{ $item->detail_url }}

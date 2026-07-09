@@ -16,109 +16,6 @@ const CLOUDFLARE_BODY_PATTERNS = [
   /Ray ID:/i,
 ];
 
-function normalizePhone(value) {
-  const digits = String(value || '').replace(/\D+/g, '');
-
-  if (!digits) {
-    return null;
-  }
-
-  if (digits.startsWith('0084') && digits.length >= 10) {
-    return `0${digits.slice(4)}`;
-  }
-
-  if (digits.startsWith('84') && !digits.startsWith('840') && digits.length >= 10) {
-    return `0${digits.slice(2)}`;
-  }
-
-  return digits;
-}
-
-function buildPhoneCandidatesFromTokens(tokens) {
-  const candidates = [];
-  let current = '';
-
-  for (const token of tokens) {
-    const digits = String(token || '').replace(/\D+/g, '');
-
-    if (!digits) {
-      continue;
-    }
-
-    const next = `${current}${digits}`;
-
-    if (!current) {
-      current = digits;
-      continue;
-    }
-
-    if (next.length <= 11) {
-      current = next;
-      continue;
-    }
-
-    if (current.length >= 8) {
-      candidates.push(current);
-    }
-
-    current = digits;
-  }
-
-  if (current.length >= 8) {
-    candidates.push(current);
-  }
-
-  return candidates;
-}
-
-function extractPhoneCandidates(value) {
-  const raw = String(value || '').trim();
-
-  if (!raw) {
-    return [];
-  }
-
-  const normalizedSeparators = raw.replace(/[|/;,]+/g, '\n');
-  const segments = normalizedSeparators
-    .split(/\n+/)
-    .map((segment) => segment.trim())
-    .filter(Boolean);
-  const candidates = [];
-
-  for (const segment of segments) {
-    const compactDigits = normalizePhone(segment);
-
-    if (compactDigits && compactDigits.length >= 8 && compactDigits.length <= 11) {
-      candidates.push(compactDigits);
-      continue;
-    }
-
-    const tokens = segment
-      .split(/\s+/)
-      .map((token) => token.trim())
-      .filter(Boolean);
-
-    candidates.push(...buildPhoneCandidatesFromTokens(tokens));
-  }
-
-  return [...new Set(
-    candidates
-      .map((candidate) => normalizePhone(candidate))
-      .filter((candidate) => candidate && candidate.length >= 8 && candidate.length <= 11)
-  )];
-}
-
-function normalizePhonePayload(value) {
-  const phoneList = extractPhoneCandidates(value);
-
-  return {
-    phone: phoneList[0] || null,
-    phoneRaw: String(value || '').trim() || null,
-    phoneList,
-    phoneSignature: phoneList.join('|') || null,
-  };
-}
-
 function browserTypeFor(name) {
   const mapping = { chromium, firefox, webkit };
   const browserType = mapping[name];
@@ -235,48 +132,6 @@ async function readListingItems(page) {
       };
     });
   }, config.siteBaseUrl);
-}
-
-async function readDetail(page) {
-  return page.evaluate(() => {
-    const normalize = (value) => (value ? value.replace(/\s+/g, ' ').trim() : '');
-    const rows = Array.from(document.querySelectorAll('table.table-taxinfo tbody tr'));
-    const rowMap = new Map();
-
-    rows.forEach((row) => {
-      const cells = row.querySelectorAll('td');
-
-      if (cells.length < 2) {
-        return;
-      }
-
-      const label = normalize(cells[0].textContent || '').toLowerCase();
-      const value = normalize(cells[1].textContent || '');
-
-      if (label) {
-        rowMap.set(label, value);
-      }
-    });
-
-    const addresses = Array.from(document.querySelectorAll('td[itemprop="address"] .copy')).map((node) =>
-      normalize(node.textContent || '')
-    );
-
-    return {
-      company_name: normalize(document.querySelector('table.table-taxinfo thead th[itemprop="name"]')?.textContent || ''),
-      tax_code: normalize(document.querySelector('td[itemprop="taxID"] .copy')?.textContent || ''),
-      tax_address: normalize(document.querySelector('#tax-address-html')?.textContent || rowMap.get('địa chỉ thuế') || ''),
-      registered_address: addresses[1] || addresses[0] || '',
-      phone: normalize(document.querySelector('#tel-full')?.textContent || rowMap.get('điện thoại') || ''),
-      tax_status: rowMap.get('tình trạng') || '',
-      international_name: rowMap.get('tên quốc tế') || '',
-      legal_representative: rowMap.get('người đại diện') || '',
-      active_date: rowMap.get('ngày hoạt động') || '',
-      managed_by: rowMap.get('quản lý bởi') || '',
-      company_type: rowMap.get('loại hình dn') || '',
-      main_business: rowMap.get('ngành nghề chính') || '',
-    };
-  });
 }
 
 async function isCloudflareChallenge(page) {
@@ -414,66 +269,6 @@ async function solveChallengeWithCapsolver(page, context, targetUrl) {
   }
 }
 
-async function waitForTableTaxInfo(page, context, detailUrl) {
-  // Dùng let để có thể reset deadline sau khi CapSolver hoàn thành
-  let deadline = Date.now() + config.navigationTimeoutMs;
-  let challengeLogged = false;
-  let capsolverAttempted = false;
-
-  while (Date.now() < deadline) {
-    if (await page.locator('table.table-taxinfo').count()) {
-      if (challengeLogged) {
-        logger.info('Cloudflare challenge cleared on detail page.', {
-          detailUrl,
-        }, 'worker.cloudflare_cleared_detail');
-      }
-
-      return;
-    }
-
-    if (await isCloudflareChallenge(page)) {
-      if (!challengeLogged) {
-        const challenge = await readChallengeDetails(page);
-
-        logger.warn('Cloudflare challenge detected on detail page.', {
-          detailUrl,
-          title: challenge.title,
-          rayId: challenge.rayId,
-          hasTurnstile: challenge.hasTurnstile,
-          hasChallengePlatform: challenge.hasChallengePlatform,
-          url: challenge.url,
-        }, 'worker.cloudflare_detail');
-
-        challengeLogged = true;
-      }
-
-      // Thử giải bằng CapSolver (chỉ 1 lần để tránh lãng phí credit)
-      // CapSolver có thể mất 30–120s, nên phải reset deadline sau khi await xong
-      // để vòng lặp còn đủ thời gian kiểm tra table-taxinfo.
-      if (!capsolverAttempted) {
-        capsolverAttempted = true;
-        const solved = await solveChallengeWithCapsolver(page, context, detailUrl);
-
-        // Reset deadline kể từ thời điểm CapSolver trả về kết quả
-        deadline = Date.now() + config.navigationTimeoutMs;
-
-        if (solved) {
-          // Đợi thêm để trang render xong sau reload
-          await page.waitForTimeout(2000);
-          continue;
-        }
-      }
-
-      await page.waitForTimeout(3000);
-      continue;
-    }
-
-    await page.waitForTimeout(1000);
-  }
-
-  throw new Error(`Detail page did not load before timeout: ${detailUrl}`);
-}
-
 async function waitForListingContent(page, context) {
   await page.goto(config.targetUrl, { waitUntil: 'domcontentloaded' });
 
@@ -542,32 +337,23 @@ async function waitForListingContent(page, context) {
 async function extractListingItems(page, context) {
   await waitForListingContent(page, context);
 
+  const observedAt = new Date().toISOString();
   const items = await readListingItems(page);
 
-  return items.filter((item) => item.detail_url && item.tax_code);
-}
+  return items
+    .filter((item) => item.detail_url && item.tax_code)
+    .map((item) => {
+      const listingPayload = { ...item };
 
-async function extractDetail(detailPage, context, listingItem) {
-  await detailPage.goto(listingItem.detail_url, { waitUntil: 'domcontentloaded' });
-  await waitForTableTaxInfo(detailPage, context, listingItem.detail_url);
-
-  const detail = await readDetail(detailPage);
-  const phoneData = normalizePhonePayload(detail.phone);
-
-  return {
-    ...listingItem,
-    ...detail,
-    phone: phoneData.phone,
-    phone_raw: phoneData.phoneRaw,
-    phone_list: phoneData.phoneList,
-    phone_signature: phoneData.phoneSignature,
-    observed_at: new Date().toISOString(),
-    source_url: config.targetUrl,
-    raw_payload: {
-      listing: listingItem,
-      detail,
-    },
-  };
+      return {
+        ...item,
+        observed_at: observedAt,
+        source_url: config.targetUrl,
+        raw_payload: {
+          listing: listingPayload,
+        },
+      };
+    });
 }
 
 async function scrapeMasothueBatch() {
@@ -577,12 +363,9 @@ async function scrapeMasothueBatch() {
   const hasStorageState = fs.existsSync(storageStatePath);
   const context = await browser.newContext(createContextOptions(storageStatePath, hasStorageState));
   const listPage = await context.newPage();
-  const detailPage = await context.newPage();
 
   listPage.setDefaultTimeout(config.timeoutMs);
-  detailPage.setDefaultTimeout(config.timeoutMs);
   listPage.setDefaultNavigationTimeout(config.navigationTimeoutMs);
-  detailPage.setDefaultNavigationTimeout(config.navigationTimeoutMs);
 
   await blockHeavyAssets(context);
 
@@ -596,9 +379,7 @@ async function scrapeMasothueBatch() {
     fs.mkdirSync(path.dirname(storageStatePath), { recursive: true });
     await context.storageState({ path: storageStatePath });
 
-    for (const item of limitedItems) {
-      results.push(await extractDetail(detailPage, context, item));
-    }
+    results.push(...limitedItems);
 
     return results;
   } finally {
@@ -609,11 +390,6 @@ async function scrapeMasothueBatch() {
 
 module.exports = {
   extractListingItems,
-  extractDetail,
-  extractPhoneCandidates,
-  normalizePhone,
-  normalizePhonePayload,
-  readDetail,
   readListingItems,
   scrapeMasothueBatch,
 };

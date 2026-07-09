@@ -112,16 +112,18 @@ test('telegram marked-item alert is idempotent per batch item and destination', 
     expect($delivery->telegram_message_id)->toBe('999');
 });
 
-test('phone comparison only uses the first primary phone number', function () {
+test('listing-only ingest keeps existing phone metadata untouched', function () {
     $service = app(MasothueIngestionService::class);
 
     $first = $service->ingest('masothue', 'worker-a', [
         'company_name' => 'CÔNG TY TEST PHONE',
         'tax_code' => '0909090909',
         'detail_url' => 'https://example.com/phone',
+        'listed_address' => 'Địa chỉ cũ',
+        'legal_representative' => 'Đại diện cũ',
         'phone' => '0914036567',
-        'phone_raw' => '0914036567',
-        'phone_list' => ['0914036567'],
+        'phone_signature' => '0914036567',
+        'phone_numbers' => ['0914036567'],
         'active_date' => '2026-07-09',
     ]);
 
@@ -129,10 +131,8 @@ test('phone comparison only uses the first primary phone number', function () {
         'company_name' => 'CÔNG TY TEST PHONE',
         'tax_code' => '0909090909',
         'detail_url' => 'https://example.com/phone',
-        'phone' => '0914036567',
-        'phone_raw' => '0914036567 09841255',
-        'phone_list' => ['0914036567', '09841255'],
-        'active_date' => '2026-07-09',
+        'listed_address' => 'Địa chỉ mới từ listing',
+        'legal_representative' => 'Đại diện mới từ listing',
     ]);
 
     expect($first['phone_changed'])->toBeFalse();
@@ -143,7 +143,9 @@ test('phone comparison only uses the first primary phone number', function () {
     expect($lead)->not->toBeNull();
     expect($lead->phone)->toBe('0914036567');
     expect($lead->phone_signature)->toBe('0914036567');
-    expect($lead->phone_numbers)->toBe(['0914036567', '09841255']);
+    expect($lead->phone_numbers)->toBe(['0914036567']);
+    expect($lead->listed_address)->toBe('Địa chỉ mới từ listing');
+    expect($lead->legal_representative)->toBe('Đại diện mới từ listing');
 });
 
 test('worker logs can be pushed to core log files endpoint', function () {
@@ -225,7 +227,7 @@ test('worker log endpoint still returns ok when file logging fails', function ()
         ]);
 });
 
-test('batch comparison only marks a new tax code when a primary phone exists', function () {
+test('batch comparison marks new listing tax codes without requiring phone data', function () {
     $service = app(MasothueIngestionService::class);
     $source = 'masothue-top-list';
 
@@ -234,16 +236,14 @@ test('batch comparison only marks a new tax code when a primary phone exists', f
             'company_name' => 'CÔNG TY A',
             'tax_code' => 'A001',
             'detail_url' => 'https://example.com/a-1',
-            'phone' => '0901',
-            'active_date' => '2026-07-09',
+            'listed_address' => 'Địa chỉ A',
             'observed_at' => '2026-07-09T03:00:00Z',
         ],
         [
             'company_name' => 'CÔNG TY B',
             'tax_code' => 'B001',
             'detail_url' => 'https://example.com/b-1',
-            'phone' => '0902',
-            'active_date' => '2026-07-09',
+            'listed_address' => 'Địa chỉ B',
             'observed_at' => '2026-07-09T03:00:00Z',
         ],
     ]);
@@ -254,24 +254,21 @@ test('batch comparison only marks a new tax code when a primary phone exists', f
             'company_name' => 'CÔNG TY C',
             'tax_code' => 'C001',
             'detail_url' => 'https://example.com/c-1',
-            'phone' => null,
-            'active_date' => '2026-07-09',
+            'listed_address' => 'Địa chỉ C',
             'observed_at' => '2026-07-09T03:05:00Z',
         ],
         [
             'company_name' => 'CÔNG TY D',
             'tax_code' => 'D001',
             'detail_url' => 'https://example.com/d-1',
-            'phone' => '0904000004',
-            'active_date' => '2026-07-09',
+            'listed_address' => 'Địa chỉ D',
             'observed_at' => '2026-07-09T03:05:00Z',
         ],
         [
             'company_name' => 'CÔNG TY A',
             'tax_code' => 'A001',
             'detail_url' => 'https://example.com/a-2',
-            'phone' => '0901',
-            'active_date' => '2026-07-09',
+            'listed_address' => 'Địa chỉ A mới',
             'observed_at' => '2026-07-09T03:05:00Z',
         ],
     ]);
@@ -279,11 +276,9 @@ test('batch comparison only marks a new tax code when a primary phone exists', f
     $result = $service->processQueuedBatch($secondBatch['batch_key']);
 
     expect($result[0]['is_new_tax_code_since_previous_batch'])->toBeTrue();
-    expect($result[0]['has_primary_phone'])->toBeFalse();
-    expect($result[0]['is_new_since_previous_batch'])->toBeFalse();
+    expect($result[0]['is_new_since_previous_batch'])->toBeTrue();
 
     expect($result[1]['is_new_tax_code_since_previous_batch'])->toBeTrue();
-    expect($result[1]['has_primary_phone'])->toBeTrue();
     expect($result[1]['is_new_since_previous_batch'])->toBeTrue();
 
     expect($result[2]['is_new_tax_code_since_previous_batch'])->toBeFalse();
@@ -292,7 +287,38 @@ test('batch comparison only marks a new tax code when a primary phone exists', f
     $latestBatch = IngestionBatch::query()->where('source', $source)->latest('id')->first();
 
     expect($latestBatch)->not->toBeNull();
-    expect($latestBatch->new_marked_count)->toBe(1);
+    expect($latestBatch->new_marked_count)->toBe(2);
+});
+
+test('first listing batch marks all companies as new items', function () {
+    $service = app(MasothueIngestionService::class);
+
+    $batch = $service->queueBatch('masothue-first-run', 'worker-a', [
+        [
+            'company_name' => 'CÔNG TY FIRST A',
+            'tax_code' => 'FIRST001',
+            'detail_url' => 'https://example.com/first-a',
+            'listed_address' => 'Địa chỉ FIRST A',
+            'observed_at' => '2026-07-09T03:00:00Z',
+        ],
+        [
+            'company_name' => 'CÔNG TY FIRST B',
+            'tax_code' => 'FIRST002',
+            'detail_url' => 'https://example.com/first-b',
+            'listed_address' => 'Địa chỉ FIRST B',
+            'observed_at' => '2026-07-09T03:00:00Z',
+        ],
+    ]);
+
+    $result = $service->processQueuedBatch($batch['batch_key']);
+
+    expect($result[0]['is_new_since_previous_batch'])->toBeTrue();
+    expect($result[1]['is_new_since_previous_batch'])->toBeTrue();
+
+    $savedBatch = IngestionBatch::query()->where('batch_key', $batch['batch_key'])->first();
+
+    expect($savedBatch)->not->toBeNull();
+    expect($savedBatch->new_marked_count)->toBe(2);
 });
 
 test('clear comparison data removes transient state but keeps telegram destinations', function () {

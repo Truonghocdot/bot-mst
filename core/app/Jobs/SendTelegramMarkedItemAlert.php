@@ -58,10 +58,15 @@ class SendTelegramMarkedItemAlert implements ShouldQueue
             return;
         }
 
+        $payload = is_array($item->payload) ? $item->payload : [];
+        $legalRepresentative = data_get($payload, 'legal_representative');
+        $listedAddress = data_get($payload, 'listed_address');
         $message = implode("\n", array_filter([
             'Dữ liệu mới từ MaSoThue',
             'Ten: '.$item->company_name,
             'MST: '.$item->tax_code,
+            $legalRepresentative ? 'Nguoi dai dien: '.$legalRepresentative : null,
+            $listedAddress ? 'Dia chi: '.$listedAddress : null,
             $item->phone ? 'SDT: '.$item->phone : null,
             $item->active_date ? 'Ngay hoat dong: '.$item->active_date->toDateString() : null,
             $item->detail_url,
