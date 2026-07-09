@@ -182,7 +182,7 @@ test('worker logs can be pushed to core log files endpoint', function () {
 
 test('batch comparison only marks a new tax code when a primary phone exists', function () {
     $service = app(MasothueIngestionService::class);
-    $source = 'masothue-top10';
+    $source = 'masothue-top-list';
 
     $firstBatch = $service->queueBatch($source, 'worker-a', [
         [
@@ -206,14 +206,6 @@ test('batch comparison only marks a new tax code when a primary phone exists', f
 
     $secondBatch = $service->queueBatch($source, 'worker-a', [
         [
-            'company_name' => 'CÔNG TY A',
-            'tax_code' => 'A001',
-            'detail_url' => 'https://example.com/a-2',
-            'phone' => '0901',
-            'active_date' => '2026-07-09',
-            'observed_at' => '2026-07-09T03:05:00Z',
-        ],
-        [
             'company_name' => 'CÔNG TY C',
             'tax_code' => 'C001',
             'detail_url' => 'https://example.com/c-1',
@@ -229,20 +221,28 @@ test('batch comparison only marks a new tax code when a primary phone exists', f
             'active_date' => '2026-07-09',
             'observed_at' => '2026-07-09T03:05:00Z',
         ],
+        [
+            'company_name' => 'CÔNG TY A',
+            'tax_code' => 'A001',
+            'detail_url' => 'https://example.com/a-2',
+            'phone' => '0901',
+            'active_date' => '2026-07-09',
+            'observed_at' => '2026-07-09T03:05:00Z',
+        ],
     ]);
 
     $result = $service->processQueuedBatch($secondBatch['batch_key']);
 
-    expect($result[0]['is_new_tax_code_since_previous_batch'])->toBeFalse();
+    expect($result[0]['is_new_tax_code_since_previous_batch'])->toBeTrue();
+    expect($result[0]['has_primary_phone'])->toBeFalse();
     expect($result[0]['is_new_since_previous_batch'])->toBeFalse();
 
     expect($result[1]['is_new_tax_code_since_previous_batch'])->toBeTrue();
-    expect($result[1]['has_primary_phone'])->toBeFalse();
-    expect($result[1]['is_new_since_previous_batch'])->toBeFalse();
+    expect($result[1]['has_primary_phone'])->toBeTrue();
+    expect($result[1]['is_new_since_previous_batch'])->toBeTrue();
 
-    expect($result[2]['is_new_tax_code_since_previous_batch'])->toBeTrue();
-    expect($result[2]['has_primary_phone'])->toBeTrue();
-    expect($result[2]['is_new_since_previous_batch'])->toBeTrue();
+    expect($result[2]['is_new_tax_code_since_previous_batch'])->toBeFalse();
+    expect($result[2]['is_new_since_previous_batch'])->toBeFalse();
 
     $latestBatch = IngestionBatch::query()->where('source', $source)->latest('id')->first();
 

@@ -10,6 +10,10 @@ function sleep(ms) {
 }
 
 async function runOnce() {
+  logger.info('Starting full Masothue crawl cycle.', {
+    target_url: config.targetUrl,
+  }, 'worker.cycle_started');
+
   const companies = await scrapeMasothueBatch();
 
   if (companies.length === 0) {
@@ -25,6 +29,9 @@ async function runOnce() {
   const response = await pushBatch(companies);
 
   logger.info('Core API accepted batch.', response, 'worker.batch_accepted');
+  logger.info('Completed full Masothue crawl cycle.', {
+    count: companies.length,
+  }, 'worker.cycle_completed');
 }
 
 async function runWatch() {

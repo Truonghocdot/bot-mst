@@ -1,0 +1,55 @@
+{
+  "cookies": [
+    {
+      "name": "res",
+      "value": "1366x768",
+      "domain": "masothue.com",
+      "path": "/",
+      "expires": 1815129591,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "PHPSESSID",
+      "value": "6b4ki9n14j06frc0timjrmn6al",
+      "domain": "masothue.com",
+      "path": "/",
+      "expires": -1,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "c_code_name",
+      "value": "VN",
+      "domain": "masothue.com",
+      "path": "/",
+      "expires": 1815129591.424131,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "FCCDCF",
+      "value": "%5Bnull%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2C%5B%5B32%2C%22%5B%5C%22fcb8bba2-7e1e-4531-8152-f9f4ad795da7%5C%22%2C%5B1783593591%2C635000000%5D%5D%22%5D%5D%5D",
+      "domain": ".masothue.com",
+      "path": "/",
+      "expires": 1817289591,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "FCNEC",
+      "value": "%5Bnull%2Cnull%2C%5B%5B21%2C%22%5B%5B%5B%5B5%2C1%2C%5B0%5D%5D%2C%5B1783593596%2C97326000%5D%2C%5B1209600%5D%5D%5D%5D%22%5D%5D%5D",
+      "domain": ".masothue.com",
+      "path": "/",
+      "expires": 1815129596,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    }
+  ],
+  "origins": []
+}

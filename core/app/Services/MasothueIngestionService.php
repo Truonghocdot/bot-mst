@@ -96,6 +96,7 @@ class MasothueIngestionService
                 true,
             )
             : [];
+        $hasReachedPreviousBatchItems = false;
         $results = [];
         $processedCompanyCount = 0;
         $newMarkedCount = 0;
@@ -110,8 +111,15 @@ class MasothueIngestionService
                     payload: $company,
                 );
                 $hasPrimaryPhone = $phoneData['phone'] !== null;
+                $existsInPreviousBatch = isset($previousComparisonKeys[$comparisonKey]);
+
+                if ($existsInPreviousBatch) {
+                    $hasReachedPreviousBatchItems = true;
+                }
+
                 $isNewTaxCodeSincePreviousBatch = $batch->previous_batch_id !== null
-                    && ! isset($previousComparisonKeys[$comparisonKey]);
+                    && ! $hasReachedPreviousBatchItems
+                    && ! $existsInPreviousBatch;
                 $isNewSincePreviousBatch = $isNewTaxCodeSincePreviousBatch && $hasPrimaryPhone;
 
                 $batchItem = IngestionBatchItem::query()->updateOrCreate(
