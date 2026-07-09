@@ -45,9 +45,16 @@ Artisan::command('masothue:clear-redis-batch-keys {source=masothue} {--drop-curr
     );
 })->purpose('Clear Redis batch keys immediately and keep only the latest current batch key by default');
 
-if ((bool) env('MASOTHUE_CLEAR_DATA_ENABLED', true)) {
+if ((bool) env('MASOTHUE_CLEAR_DATA_ENABLED', false)) {
     Schedule::command('masothue:clear-comparison-data')
         ->dailyAt((string) env('MASOTHUE_CLEAR_DATA_AT', '23:59'))
+        ->timezone(config('app.timezone'))
+        ->withoutOverlapping();
+}
+
+if ((bool) env('MASOTHUE_CLEAR_REDIS_KEYS_ENABLED', true)) {
+    Schedule::command('masothue:clear-redis-batch-keys')
+        ->cron((string) env('MASOTHUE_CLEAR_REDIS_KEYS_CRON', '0 */2 * * *'))
         ->timezone(config('app.timezone'))
         ->withoutOverlapping();
 }
