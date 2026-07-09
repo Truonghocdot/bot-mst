@@ -4,7 +4,7 @@ const { chromium, firefox, webkit } = require('playwright-extra');
 const stealthPlugin = require('puppeteer-extra-plugin-stealth');
 const config = require('./config');
 const logger = require('./logger');
-const { solveCloudflareChallenge } = require('./capsolver-client');
+const { solveCloudflareChallenge } = require('./capsolver-client'); // buildCapsolverProxyList dùng nội bộ trong capsolver-client
 
 chromium.use(stealthPlugin());
 
