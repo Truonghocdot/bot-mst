@@ -80,6 +80,7 @@ module.exports = {
   httpTimeoutMs: readNumber('HTTP_TIMEOUT_MS', 10000),
   retryAttempts: readNumber('RETRY_ATTEMPTS', 3),
   retryDelayMs: readNumber('RETRY_DELAY_MS', 2000),
+  debugArtifactsDir: readEnv('PLAYWRIGHT_DEBUG_ARTIFACTS_DIR', '.playwright/debug'),
   coreApiBaseUrl: requireEnv('CORE_API_BASE_URL'),
   coreApiEndpoint: readEnv('CORE_API_ENDPOINT', '/api/ingestions/masothue'),
   coreApiToken: requireEnv('CORE_API_TOKEN'),

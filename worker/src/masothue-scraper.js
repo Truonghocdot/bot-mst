@@ -16,6 +16,69 @@ const CLOUDFLARE_BODY_PATTERNS = [
   /Ray ID:/i,
 ];
 
+function sanitizeArtifactSegment(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80) || 'artifact';
+}
+
+async function capturePageArtifacts(page, reason, extra = {}) {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const artifactName = `${timestamp}-${sanitizeArtifactSegment(reason)}`;
+  const artifactDir = path.resolve(__dirname, '..', config.debugArtifactsDir);
+  const screenshotPath = path.join(artifactDir, `${artifactName}.png`);
+  const htmlPath = path.join(artifactDir, `${artifactName}.html`);
+  const textPath = path.join(artifactDir, `${artifactName}.txt`);
+  const metadataPath = path.join(artifactDir, `${artifactName}.json`);
+
+  fs.mkdirSync(artifactDir, { recursive: true });
+
+  const title = await page.title().catch(() => '');
+  const url = page.url();
+  const html = await page.content().catch(() => '');
+  const bodyText = await page.locator('body').innerText().catch(() => '');
+  const listingCount = await page.locator('.tax-listing div[data-prefetch]').count().catch(() => -1);
+
+  await Promise.allSettled([
+    page.screenshot({
+      path: screenshotPath,
+      fullPage: true,
+    }),
+    fs.promises.writeFile(htmlPath, html, 'utf8'),
+    fs.promises.writeFile(textPath, bodyText, 'utf8'),
+    fs.promises.writeFile(metadataPath, JSON.stringify({
+      reason,
+      captured_at: new Date().toISOString(),
+      title,
+      url,
+      listing_count: listingCount,
+      body_snippet: bodyText.slice(0, 1000),
+      html_snippet: html.slice(0, 1000),
+      ...extra,
+    }, null, 2)),
+  ]);
+
+  logger.error('Captured page artifacts for debugging.', {
+    reason,
+    title,
+    url,
+    listingCount,
+    screenshotPath,
+    htmlPath,
+    textPath,
+    metadataPath,
+  }, 'worker.debug_artifacts');
+
+  return {
+    screenshotPath,
+    htmlPath,
+    textPath,
+    metadataPath,
+  };
+}
+
 function browserTypeFor(name) {
   const mapping = { chromium, firefox, webkit };
   const browserType = mapping[name];
@@ -326,10 +389,20 @@ async function waitForListingContent(page, context) {
   }
 
   if (await isCloudflareChallenge(page)) {
+    await capturePageArtifacts(page, 'listing-cloudflare-timeout', {
+      targetUrl: config.targetUrl,
+      challengeDetected: true,
+    });
+
     throw new Error(
       'Cloudflare challenge is blocking the worker. Try PLAYWRIGHT_HEADLESS=false once to solve it and persist PLAYWRIGHT_STORAGE_STATE.'
     );
   }
+
+  await capturePageArtifacts(page, 'listing-structure-timeout', {
+    targetUrl: config.targetUrl,
+    challengeDetected: false,
+  });
 
   throw new Error('Listing content did not load before timeout.');
 }
