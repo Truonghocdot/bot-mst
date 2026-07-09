@@ -108,8 +108,10 @@ class MasothueIngestionService
                     workerName: $workerName,
                     payload: $company,
                 );
-                $isNewSincePreviousBatch = $batch->previous_batch_id !== null
+                $hasPrimaryPhone = $phoneData['phone'] !== null;
+                $isNewTaxCodeSincePreviousBatch = $batch->previous_batch_id !== null
                     && ! isset($previousComparisonKeys[$comparisonKey]);
+                $isNewSincePreviousBatch = $isNewTaxCodeSincePreviousBatch && $hasPrimaryPhone;
 
                 $batchItem = IngestionBatchItem::query()->updateOrCreate(
                     [
@@ -142,12 +144,21 @@ class MasothueIngestionService
                     SendTelegramMarkedItemAlert::dispatch($batchItem->id)
                         ->onConnection('redis')
                         ->onQueue('telegram');
+                } elseif ($isNewTaxCodeSincePreviousBatch && ! $hasPrimaryPhone) {
+                    $this->operationsLog->warning('Skipped new tax code because the company has no primary phone.', [
+                        'batch_key' => $batchKey,
+                        'source' => $source,
+                        'tax_code' => $company['tax_code'] ?? null,
+                        'company_name' => $company['company_name'] ?? null,
+                    ]);
                 }
 
                 $processedCompanyCount++;
                 $results[] = array_merge($result, [
                     'ingestion_batch_id' => $batch->id,
                     'ingestion_batch_item_id' => $batchItem->id,
+                    'is_new_tax_code_since_previous_batch' => $isNewTaxCodeSincePreviousBatch,
+                    'has_primary_phone' => $hasPrimaryPhone,
                     'is_new_since_previous_batch' => $isNewSincePreviousBatch,
                 ]);
             }
@@ -297,7 +308,6 @@ class MasothueIngestionService
         return sha1(implode('|', [
             $source,
             (string) ($payload['tax_code'] ?? ''),
-            (string) ($payload['detail_url'] ?? ''),
         ]));
     }
 
