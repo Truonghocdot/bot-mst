@@ -3,6 +3,7 @@ const path = require('path');
 const { chromium, firefox, webkit } = require('playwright-extra');
 const stealthPlugin = require('puppeteer-extra-plugin-stealth');
 const config = require('./config');
+const logger = require('./logger');
 
 chromium.use(stealthPlugin());
 
@@ -117,17 +118,6 @@ function normalizePhonePayload(value) {
   };
 }
 
-function log(message, payload) {
-  const timestamp = new Date().toISOString();
-
-  if (payload === undefined) {
-    console.log(`[${timestamp}] ${message}`);
-    return;
-  }
-
-  console.log(`[${timestamp}] ${message}`, payload);
-}
-
 function browserTypeFor(name) {
   const mapping = { chromium, firefox, webkit };
   const browserType = mapping[name];
@@ -171,18 +161,18 @@ async function launchBrowser(browserType) {
 
   for (const proxyServer of proxyServers) {
     try {
-      log('Launching browser with proxy.', {
+      logger.info('Launching browser with proxy.', {
         proxyServer,
         proxyType: config.proxyType,
-      });
+      }, 'worker.proxy_launch');
 
       return await browserType.launch(createLaunchOptions(proxyServer));
     } catch (error) {
       lastError = error;
-      log('Failed to launch browser with proxy.', {
+      logger.warn('Failed to launch browser with proxy.', {
         proxyServer,
         error: error.message,
-      });
+      }, 'worker.proxy_launch_failed');
     }
   }
 
@@ -331,9 +321,9 @@ async function waitForTableTaxInfo(page, detailUrl) {
   while (Date.now() < deadline) {
     if (await page.locator('table.table-taxinfo').count()) {
       if (challengeLogged) {
-        log('Cloudflare challenge cleared on detail page.', {
+        logger.info('Cloudflare challenge cleared on detail page.', {
           detailUrl,
-        });
+        }, 'worker.cloudflare_cleared_detail');
       }
 
       return;
@@ -343,14 +333,14 @@ async function waitForTableTaxInfo(page, detailUrl) {
       if (!challengeLogged) {
         const challenge = await readChallengeDetails(page);
 
-        log('Cloudflare challenge detected on detail page.', {
+        logger.warn('Cloudflare challenge detected on detail page.', {
           detailUrl,
           title: challenge.title,
           rayId: challenge.rayId,
           hasTurnstile: challenge.hasTurnstile,
           hasChallengePlatform: challenge.hasChallengePlatform,
           url: challenge.url,
-        });
+        }, 'worker.cloudflare_detail');
 
         challengeLogged = true;
       }
@@ -374,9 +364,9 @@ async function waitForListingContent(page) {
   while (Date.now() < deadline) {
     if (await page.locator('.tax-listing div[data-prefetch]').count()) {
       if (challengeLogged) {
-        log('Cloudflare challenge cleared on listing page.', {
+        logger.info('Cloudflare challenge cleared on listing page.', {
           url: page.url(),
-        });
+        }, 'worker.cloudflare_cleared_listing');
       }
 
       return;
@@ -386,13 +376,13 @@ async function waitForListingContent(page) {
       if (!challengeLogged) {
         const challenge = await readChallengeDetails(page);
 
-        log('Cloudflare challenge detected on listing page.', {
+        logger.warn('Cloudflare challenge detected on listing page.', {
           title: challenge.title,
           rayId: challenge.rayId,
           hasTurnstile: challenge.hasTurnstile,
           hasChallengePlatform: challenge.hasChallengePlatform,
           url: challenge.url,
-        });
+        }, 'worker.cloudflare_listing');
 
         challengeLogged = true;
       }

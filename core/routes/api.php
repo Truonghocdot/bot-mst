@@ -2,11 +2,13 @@
 
 use App\Http\Controllers\Api\MasothueIngestionController;
 use App\Http\Controllers\Api\TelegramWebhookController;
+use App\Http\Controllers\Api\WorkerLogController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/ingestions/masothue', [MasothueIngestionController::class, 'store']);
 Route::post('/telegram/webhook', [TelegramWebhookController::class, 'store']);
+Route::post('/logs/worker', [WorkerLogController::class, 'store']);
 
 Route::get('/user', function (Request $request) {
     return $request->user();

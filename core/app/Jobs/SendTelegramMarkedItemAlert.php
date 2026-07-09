@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Models\IngestionBatchItem;
 use App\Models\TelegramDestination;
 use App\Models\TelegramDestinationDelivery;
+use App\Services\OperationsLogService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Http;
@@ -23,7 +24,7 @@ class SendTelegramMarkedItemAlert implements ShouldQueue
     ) {
     }
 
-    public function handle(): void
+    public function handle(OperationsLogService $operationsLog): void
     {
         $token = (string) config('services.telegram.bot_token');
 
@@ -109,6 +110,12 @@ class SendTelegramMarkedItemAlert implements ShouldQueue
                     'last_sent_at' => now(),
                     'last_error_message' => null,
                 ])->save();
+
+                $operationsLog->info('Sent Telegram marked-item alert.', [
+                    'ingestion_batch_item_id' => $item->id,
+                    'telegram_destination_id' => $destination->id,
+                    'chat_id' => $destination->chat_id,
+                ]);
             } catch (\Throwable $exception) {
                 $hadFailure = true;
 
@@ -126,6 +133,13 @@ class SendTelegramMarkedItemAlert implements ShouldQueue
                 Log::warning('Telegram send failed for destination.', [
                     'telegram_destination_id' => $destination->id,
                     'ingestion_batch_item_id' => $item->id,
+                    'error' => $exception->getMessage(),
+                ]);
+
+                $operationsLog->error('Failed to send Telegram marked-item alert.', [
+                    'ingestion_batch_item_id' => $item->id,
+                    'telegram_destination_id' => $destination->id,
+                    'chat_id' => $destination->chat_id,
                     'error' => $exception->getMessage(),
                 ]);
             }

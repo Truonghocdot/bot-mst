@@ -18,6 +18,11 @@ class MasothueIngestionService
 
     private const REDIS_BATCH_TTL_SECONDS = 3600;
 
+    public function __construct(
+        private readonly OperationsLogService $operationsLog,
+    ) {
+    }
+
     /**
      * @param  array<int, array<string, mixed>>  $companies
      * @return array{batch_key: string, queued: int}
@@ -32,6 +37,13 @@ class MasothueIngestionService
             'companies' => $companies,
             'queued_at' => now()->toIso8601String(),
         ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
+
+        $this->operationsLog->info('Queued batch into Redis.', [
+            'source' => $source,
+            'worker_name' => $workerName,
+            'queued' => count($companies),
+            'batch_key' => $batchKey,
+        ]);
 
         return [
             'batch_key' => $batchKey,
@@ -146,11 +158,26 @@ class MasothueIngestionService
                 'new_marked_count' => $newMarkedCount,
                 'processed_at' => now(),
             ]);
+
+            $this->operationsLog->info('Processed ingestion batch.', [
+                'batch_key' => $batchKey,
+                'source' => $source,
+                'processed_company_count' => $processedCompanyCount,
+                'new_marked_count' => $newMarkedCount,
+                'previous_batch_id' => $batch->previous_batch_id,
+            ]);
         } catch (\Throwable $exception) {
             $batch->update([
                 'status' => 'failed',
                 'processed_company_count' => $processedCompanyCount,
                 'new_marked_count' => $newMarkedCount,
+            ]);
+
+            $this->operationsLog->error('Failed to process ingestion batch.', [
+                'batch_key' => $batchKey,
+                'source' => $source,
+                'processed_company_count' => $processedCompanyCount,
+                'error' => $exception->getMessage(),
             ]);
 
             throw $exception;

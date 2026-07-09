@@ -7,6 +7,7 @@
 
         <form method="POST" action="{{ route('admin.logout') }}">
             @csrf
+            <a href="{{ url('/admin/logs') }}" class="btn-secondary" style="text-decoration:none;">Xem log</a>
             <button class="btn-secondary" type="submit">Đăng xuất</button>
         </form>
     </div>

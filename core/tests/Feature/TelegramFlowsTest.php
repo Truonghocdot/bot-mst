@@ -9,6 +9,7 @@ use App\Models\TelegramDestinationDelivery;
 use App\Services\MasothueIngestionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 uses(RefreshDatabase::class);
 
@@ -93,8 +94,8 @@ test('telegram marked-item alert is idempotent per batch item and destination', 
     ]);
 
     $job = new SendTelegramMarkedItemAlert($item->id);
-    $job->handle();
-    $job->handle();
+    $job->handle(app(\App\Services\OperationsLogService::class));
+    $job->handle(app(\App\Services\OperationsLogService::class));
 
     Http::assertSentCount(1);
 
@@ -141,4 +142,38 @@ test('phone comparison only uses the first primary phone number', function () {
     expect($lead->phone)->toBe('0914036567');
     expect($lead->phone_signature)->toBe('0914036567');
     expect($lead->phone_numbers)->toBe(['0914036567', '09841255']);
+});
+
+test('worker logs can be pushed to core log files endpoint', function () {
+    config()->set('services.worker.token', 'worker-secret');
+
+    Log::shouldReceive('channel')->once()->with('worker_remote')->andReturnSelf();
+    Log::shouldReceive('log')->once()->with(
+        'warning',
+        'Worker warning',
+        \Mockery::on(fn (array $context) => $context['worker_name'] === 'bot-mst-worker'
+            && $context['source'] === 'masothue'
+            && $context['event'] === 'worker.cloudflare_listing')
+    );
+
+    $response = $this->withHeader('Authorization', 'Bearer worker-secret')
+        ->postJson('/api/logs/worker', [
+            'entries' => [[
+                'level' => 'warning',
+                'message' => 'Worker warning',
+                'event' => 'worker.cloudflare_listing',
+                'worker_name' => 'bot-mst-worker',
+                'source' => 'masothue',
+                'timestamp' => now()->toIso8601String(),
+                'context' => [
+                    'rayId' => 'abc123',
+                ],
+            ]],
+        ]);
+
+    $response->assertOk()
+        ->assertJson([
+            'ok' => true,
+            'accepted' => 1,
+        ]);
 });

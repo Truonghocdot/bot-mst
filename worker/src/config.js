@@ -83,4 +83,8 @@ module.exports = {
   coreApiBaseUrl: requireEnv('CORE_API_BASE_URL'),
   coreApiEndpoint: readEnv('CORE_API_ENDPOINT', '/api/ingestions/masothue'),
   coreApiToken: requireEnv('CORE_API_TOKEN'),
+  coreLogsEnabled: readBoolean('CORE_LOGS_ENABLED', true),
+  coreLogsEndpoint: readEnv('CORE_LOGS_ENDPOINT', '/api/logs/worker'),
+  coreLogsFlushIntervalMs: readNumber('CORE_LOGS_FLUSH_INTERVAL_MS', 2000),
+  coreLogsBatchSize: readNumber('CORE_LOGS_BATCH_SIZE', 20),
 };

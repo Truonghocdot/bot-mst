@@ -5,13 +5,14 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Jobs\ProcessMasothueBatch;
 use App\Services\MasothueIngestionService;
+use App\Services\OperationsLogService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
 class MasothueIngestionController extends Controller
 {
-    public function store(Request $request, MasothueIngestionService $ingestionService): JsonResponse
+    public function store(Request $request, MasothueIngestionService $ingestionService, OperationsLogService $operationsLog): JsonResponse
     {
         $expectedToken = (string) config('services.worker.token');
         $providedToken = (string) $request->bearerToken();
@@ -56,6 +57,13 @@ class MasothueIngestionController extends Controller
             workerName: $validated['worker_name'] ?? null,
             companies: $validated['companies'],
         );
+
+        $operationsLog->info('Accepted worker ingestion batch.', [
+            'source' => $validated['source'],
+            'worker_name' => $validated['worker_name'] ?? null,
+            'queued' => $queuedBatch['queued'],
+            'batch_key' => $queuedBatch['batch_key'],
+        ]);
 
         ProcessMasothueBatch::dispatch(
             batchKey: $queuedBatch['batch_key'],

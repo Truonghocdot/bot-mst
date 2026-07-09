@@ -6,6 +6,11 @@ use App\Models\TelegramDestination;
 
 class TelegramWebhookService
 {
+    public function __construct(
+        private readonly OperationsLogService $operationsLog,
+    ) {
+    }
+
     /**
      * @param  array<string, mixed>  $update
      */
@@ -38,6 +43,14 @@ class TelegramWebhookService
         ]);
 
         $destination->save();
+
+        $this->operationsLog->info('Captured Telegram destination from webhook.', [
+            'chat_id' => $destination->chat_id,
+            'label' => $destination->label,
+            'source' => $source,
+            'telegram_chat_type' => $chatType,
+            'is_active' => $destination->is_active,
+        ]);
 
         return $destination;
     }
