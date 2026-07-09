@@ -3,14 +3,14 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Services\SafeLogWriter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
 
 class WorkerLogController extends Controller
 {
-    public function store(Request $request): JsonResponse
+    public function store(Request $request, SafeLogWriter $safeLogWriter): JsonResponse
     {
         $expectedToken = (string) config('services.worker.token');
         $providedToken = (string) $request->bearerToken();
@@ -33,7 +33,8 @@ class WorkerLogController extends Controller
         ]);
 
         foreach ($validated['entries'] as $entry) {
-            Log::channel('worker_remote')->log(
+            $safeLogWriter->write(
+                'worker_remote',
                 $entry['level'],
                 $entry['message'],
                 [

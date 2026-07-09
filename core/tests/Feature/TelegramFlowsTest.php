@@ -180,6 +180,51 @@ test('worker logs can be pushed to core log files endpoint', function () {
         ]);
 });
 
+test('operations log write failures do not bubble out of the service', function () {
+    Log::shouldReceive('channel')->once()->with('operations')->andReturnSelf();
+    Log::shouldReceive('log')->once()->with(
+        'info',
+        'Queued batch into Redis.',
+        [
+            'source' => 'masothue',
+        ],
+    )->andThrow(new UnexpectedValueException('Permission denied'));
+
+    app(\App\Services\OperationsLogService::class)->info('Queued batch into Redis.', [
+        'source' => 'masothue',
+    ]);
+
+    expect(true)->toBeTrue();
+});
+
+test('worker log endpoint still returns ok when file logging fails', function () {
+    config()->set('services.worker.token', 'worker-secret');
+
+    Log::shouldReceive('channel')->once()->with('worker_remote')->andReturnSelf();
+    Log::shouldReceive('log')->once()->andThrow(new UnexpectedValueException('Permission denied'));
+
+    $response = $this->withHeader('Authorization', 'Bearer worker-secret')
+        ->postJson('/api/logs/worker', [
+            'entries' => [[
+                'level' => 'warning',
+                'message' => 'Worker warning',
+                'event' => 'worker.cloudflare_listing',
+                'worker_name' => 'bot-mst-worker',
+                'source' => 'masothue',
+                'timestamp' => now()->toIso8601String(),
+                'context' => [
+                    'rayId' => 'abc123',
+                ],
+            ]],
+        ]);
+
+    $response->assertOk()
+        ->assertJson([
+            'ok' => true,
+            'accepted' => 1,
+        ]);
+});
+
 test('batch comparison only marks a new tax code when a primary phone exists', function () {
     $service = app(MasothueIngestionService::class);
     $source = 'masothue-top-list';

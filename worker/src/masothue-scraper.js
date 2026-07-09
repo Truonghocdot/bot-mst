@@ -405,9 +405,10 @@ async function solveChallengeWithCapsolver(page, context, targetUrl) {
 
     return true;
   } catch (error) {
-    logger.error(`CapSolver: giải challenge thất bại — ${error.message}`, {
+    logger.error('CapSolver: giải challenge thất bại.', {
       targetUrl,
       error: error.message,
+      stack: error.stack,
     }, 'capsolver.solve_failed');
     return false;
   }

@@ -39,7 +39,8 @@ async function runWatch() {
     try {
       await runOnce();
     } catch (error) {
-      logger.error(`Worker cycle failed: ${error.message}`, {
+      logger.error('Worker cycle failed.', {
+        error: error.message,
         stack: error.stack,
       }, 'worker.cycle_failed');
     }
@@ -59,7 +60,8 @@ async function main() {
 
 main().catch((error) => {
   console.error(error);
-  logger.error(`Worker fatal error: ${error.message}`, {
+  logger.error('Worker fatal error.', {
+    error: error.message,
     stack: error.stack,
   }, 'worker.fatal');
   logger.flush().finally(() => {

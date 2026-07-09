@@ -2,16 +2,19 @@
 
 namespace App\Services;
 
-use Illuminate\Support\Facades\Log;
-
 class OperationsLogService
 {
+    public function __construct(
+        private readonly SafeLogWriter $safeLogWriter,
+    ) {
+    }
+
     /**
      * @param  array<string, mixed>  $context
      */
     public function write(string $level, string $message, array $context = []): void
     {
-        Log::channel('operations')->log($level, $message, $context);
+        $this->safeLogWriter->write('operations', $level, $message, $context);
     }
 
     /**

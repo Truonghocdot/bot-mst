@@ -68,11 +68,11 @@ Neu dung SQLite:
 ```bash
 cd /var/www/html/bot-mst/core
 touch database/database.sqlite
-php artisan key:generate --force
-php artisan migrate --force
-php artisan config:cache
-php artisan route:cache
-php artisan view:cache
+sudo -u www-data php artisan key:generate --force
+sudo -u www-data php artisan migrate --force
+sudo -u www-data php artisan config:cache
+sudo -u www-data php artisan route:cache
+sudo -u www-data php artisan view:cache
 ```
 
 ## 5. Cau hinh `worker/.env`
@@ -98,17 +98,14 @@ CAPSOLVER_API_KEY=
 ## 6. Gan quyen thu muc Laravel
 
 ```bash
-cd /var/www/html/bot-mst/core
-chown -R www-data:www-data storage bootstrap/cache
-chmod -R ug+rwx storage bootstrap/cache
+/var/www/html/bot-mst/deploy/fix-permissions.sh /var/www/html/bot-mst
 ```
 
 Cho worker ghi duoc `.playwright` va cache:
 
 ```bash
-cd /var/www/html/bot-mst
-chown -R www-data:www-data worker
-chmod -R ug+rwx worker
+ls -ld /var/www/html/bot-mst/core/storage /var/www/html/bot-mst/core/storage/logs
+ls -l /var/www/html/bot-mst/core/storage/logs
 ```
 
 ## 7. Nginx
@@ -169,7 +166,7 @@ Kiem tra route:
 
 ```bash
 cd /var/www/html/bot-mst/core
-php artisan route:list
+sudo -u www-data php artisan route:list
 ```
 
 Kiem tra queue:
@@ -214,20 +211,33 @@ Dang nhap bang:
 
 - Neu trong repo dang co token Telegram that, nen rotate token ngay sau khi deploy.
 - Worker chi hoat dong on dinh khi proxy, user-agent, session storage state nhat quan.
+- Tren production, uu tien chay moi lenh `php artisan ...` bang `sudo -u www-data` de tranh tao file trong `storage/` va `bootstrap/cache/` voi owner sai.
+- Neu gap loi `Permission denied` khi ghi `storage/logs/*.log`, chay lai:
+
+```bash
+/var/www/html/bot-mst/deploy/fix-permissions.sh /var/www/html/bot-mst
+supervisorctl restart bot-mst-web
+supervisorctl restart bot-mst-queue
+supervisorctl restart bot-mst-worker
+```
+
 - De deploy lai sau khi pull code moi:
 
 ```bash
+/var/www/html/bot-mst/deploy/fix-permissions.sh /var/www/html/bot-mst
+
 cd /var/www/html/bot-mst/core
 composer install --no-dev --optimize-autoloader
 npm ci && npm run build
-php artisan migrate --force
-php artisan config:cache
-php artisan route:cache
-php artisan view:cache
+sudo -u www-data php artisan migrate --force
+sudo -u www-data php artisan config:cache
+sudo -u www-data php artisan route:cache
+sudo -u www-data php artisan view:cache
 
 cd /var/www/html/bot-mst/worker
 npm ci
 
+/var/www/html/bot-mst/deploy/fix-permissions.sh /var/www/html/bot-mst
 supervisorctl restart bot-mst-queue
 supervisorctl restart bot-mst-worker
 ```

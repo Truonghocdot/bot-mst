@@ -80,10 +80,28 @@ class SendTelegramMarkedItemAlert implements ShouldQueue
             );
 
             if ($delivery->status === 'sent') {
+                $operationsLog->info('Skipped Telegram marked-item alert because it was already sent.', [
+                    'ingestion_batch_item_id' => $item->id,
+                    'telegram_destination_id' => $destination->id,
+                    'chat_id' => $destination->chat_id,
+                    'telegram_message_id' => $delivery->telegram_message_id,
+                    'sent_at' => $delivery->sent_at?->toIso8601String(),
+                ]);
+
                 continue;
             }
 
             try {
+                $operationsLog->info('Sending Telegram marked-item alert.', [
+                    'ingestion_batch_item_id' => $item->id,
+                    'telegram_destination_id' => $destination->id,
+                    'chat_id' => $destination->chat_id,
+                    'label' => $destination->label,
+                    'delivery_status' => $delivery->status,
+                    'attempt_count' => $delivery->attempt_count,
+                    'message_preview' => $message,
+                ]);
+
                 $response = Http::asForm()
                     ->timeout(10)
                     ->retry(3, 500)
@@ -95,11 +113,15 @@ class SendTelegramMarkedItemAlert implements ShouldQueue
                     ->throw();
 
                 $responsePayload = $response->json();
+                $messageId = data_get($responsePayload, 'result.message_id');
+                $responseChatId = data_get($responsePayload, 'result.chat.id');
+                $responseChatType = data_get($responsePayload, 'result.chat.type');
+                $responseChatTitle = data_get($responsePayload, 'result.chat.title');
 
                 $delivery->forceFill([
                     'status' => 'sent',
                     'attempt_count' => $delivery->attempt_count + 1,
-                    'telegram_message_id' => data_get($responsePayload, 'result.message_id'),
+                    'telegram_message_id' => $messageId,
                     'response_payload' => $responsePayload,
                     'last_error_message' => null,
                     'last_attempt_at' => now(),
@@ -115,6 +137,12 @@ class SendTelegramMarkedItemAlert implements ShouldQueue
                     'ingestion_batch_item_id' => $item->id,
                     'telegram_destination_id' => $destination->id,
                     'chat_id' => $destination->chat_id,
+                    'telegram_message_id' => $messageId,
+                    'response_chat_id' => $responseChatId,
+                    'response_chat_type' => $responseChatType,
+                    'response_chat_title' => $responseChatTitle,
+                    'response_ok' => data_get($responsePayload, 'ok'),
+                    'response_payload' => $responsePayload,
                 ]);
             } catch (\Throwable $exception) {
                 $hadFailure = true;
