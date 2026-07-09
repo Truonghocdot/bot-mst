@@ -87,4 +87,15 @@ module.exports = {
   coreLogsEndpoint: readEnv('CORE_LOGS_ENDPOINT', '/api/logs/worker'),
   coreLogsFlushIntervalMs: readNumber('CORE_LOGS_FLUSH_INTERVAL_MS', 2000),
   coreLogsBatchSize: readNumber('CORE_LOGS_BATCH_SIZE', 20),
+  // CapSolver — Cloudflare Challenge bypass
+  capsolverEnabled: readBoolean('CAPSOLVER_ENABLED', true),
+  capsolverApiKey: readEnv('CAPSOLVER_API_KEY'),
+  capsolverTaskType: readEnv('CAPSOLVER_TASK_TYPE', 'AntiCloudflareTask'),
+  capsolverCreateTaskUrl: readEnv('CAPSOLVER_CREATE_TASK_URL', 'https://api.capsolver.com/createTask'),
+  capsolverGetTaskResultUrl: readEnv('CAPSOLVER_GET_TASK_RESULT_URL', 'https://api.capsolver.com/getTaskResult'),
+  capsolverProxy: readEnv('CAPSOLVER_PROXY'),
+  capsolverUserAgent: readEnv('CAPSOLVER_USER_AGENT'),
+  capsolverSubmitHtml: readBoolean('CAPSOLVER_SUBMIT_HTML', true),
+  capsolverPollIntervalMs: readNumber('CAPSOLVER_POLL_INTERVAL_MS', 3000),
+  capsolverTimeoutMs: readNumber('CAPSOLVER_TIMEOUT_MS', 120000),
 };

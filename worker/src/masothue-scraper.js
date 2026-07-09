@@ -4,6 +4,7 @@ const { chromium, firefox, webkit } = require('playwright-extra');
 const stealthPlugin = require('puppeteer-extra-plugin-stealth');
 const config = require('./config');
 const logger = require('./logger');
+const { solveCloudflareChallenge } = require('./capsolver-client');
 
 chromium.use(stealthPlugin());
 
@@ -314,9 +315,108 @@ async function readChallengeDetails(page) {
   };
 }
 
-async function waitForTableTaxInfo(page, detailUrl) {
+/**
+ * Inject cf_clearance cookie và userAgent vào browser context sau khi CapSolver giải thành công.
+ *
+ * @param {import('playwright').BrowserContext} context
+ * @param {object} solution - Kết quả từ solveCloudflareChallenge
+ * @param {string} targetUrl - URL để xác định domain cho cookie
+ */
+async function injectCfClearance(context, solution, targetUrl) {
+  const { cfClearance, userAgent, cookies } = solution;
+
+  if (!cfClearance) {
+    logger.warn('CapSolver: không có cf_clearance để inject.', {
+      targetUrl,
+      availableCookies: Object.keys(cookies),
+    }, 'capsolver.inject_skip');
+    return;
+  }
+
+  const parsedUrl = new URL(targetUrl);
+  const cookieDomain = parsedUrl.hostname; // e.g. masothue.com
+
+  // Xây dựng danh sách tất cả cookies từ solution để inject vào context
+  const cookieList = Object.entries(cookies).map(([name, value]) => ({
+    name,
+    value: String(value),
+    domain: cookieDomain,
+    path: '/',
+    httpOnly: name === 'cf_clearance',
+    secure: parsedUrl.protocol === 'https:',
+    sameSite: 'Lax',
+  }));
+
+  await context.addCookies(cookieList);
+
+  logger.info('CapSolver: đã inject cookies vào browser context.', {
+    domain: cookieDomain,
+    cookies: cookieList.map((c) => c.name),
+    hasCfClearance: Boolean(cfClearance),
+  }, 'capsolver.inject_done');
+
+  // Nếu CapSolver trả về userAgent khác, lưu lại để dùng cho context tiếp theo
+  // (Playwright không cho phép thay đổi userAgent của context đang chạy,
+  //  nhưng log lại để debug nếu cần)
+  if (userAgent && userAgent !== config.userAgent) {
+    logger.warn('CapSolver: userAgent từ solution khác với config hiện tại.', {
+      configUserAgent: config.userAgent,
+      capsolverUserAgent: userAgent,
+    }, 'capsolver.useragent_mismatch');
+  }
+}
+
+/**
+ * Giải Cloudflare challenge bằng CapSolver và inject cf_clearance vào context.
+ * Sau đó reload trang để vượt qua challenge.
+ *
+ * @param {import('playwright').Page} page
+ * @param {import('playwright').BrowserContext} context
+ * @param {string} targetUrl - URL trang đang bị block
+ * @returns {Promise<boolean>} true nếu giải thành công
+ */
+async function solveChallengeWithCapsolver(page, context, targetUrl) {
+  if (!config.capsolverEnabled || !config.capsolverApiKey) {
+    logger.warn('CapSolver bị tắt hoặc thiếu API key — bỏ qua bypass.', {
+      enabled: config.capsolverEnabled,
+      hasApiKey: Boolean(config.capsolverApiKey),
+    }, 'capsolver.disabled');
+    return false;
+  }
+
+  const html = config.capsolverSubmitHtml
+    ? await page.content().catch(() => null)
+    : null;
+
+  logger.info('CapSolver: bắt đầu giải Cloudflare challenge.', {
+    targetUrl,
+    hasHtml: Boolean(html),
+  }, 'capsolver.solving');
+
+  try {
+    const solution = await solveCloudflareChallenge({ websiteUrl: targetUrl, html });
+    await injectCfClearance(context, solution, targetUrl);
+
+    // Reload trang để dùng cookie cf_clearance vừa inject
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    logger.info('CapSolver: đã reload trang sau khi inject cf_clearance.', {
+      targetUrl,
+    }, 'capsolver.reloaded');
+
+    return true;
+  } catch (error) {
+    logger.error(`CapSolver: giải challenge thất bại — ${error.message}`, {
+      targetUrl,
+      error: error.message,
+    }, 'capsolver.solve_failed');
+    return false;
+  }
+}
+
+async function waitForTableTaxInfo(page, context, detailUrl) {
   const deadline = Date.now() + config.navigationTimeoutMs;
   let challengeLogged = false;
+  let capsolverAttempted = false;
 
   while (Date.now() < deadline) {
     if (await page.locator('table.table-taxinfo').count()) {
@@ -345,6 +445,18 @@ async function waitForTableTaxInfo(page, detailUrl) {
         challengeLogged = true;
       }
 
+      // Thử giải bằng CapSolver (chỉ 1 lần để tránh lãng phí credit)
+      if (!capsolverAttempted) {
+        capsolverAttempted = true;
+        const solved = await solveChallengeWithCapsolver(page, context, detailUrl);
+
+        if (solved) {
+          // Đợi thêm để trang render xong sau reload
+          await page.waitForTimeout(2000);
+          continue;
+        }
+      }
+
       await page.waitForTimeout(3000);
       continue;
     }
@@ -355,11 +467,12 @@ async function waitForTableTaxInfo(page, detailUrl) {
   throw new Error(`Detail page did not load before timeout: ${detailUrl}`);
 }
 
-async function waitForListingContent(page) {
+async function waitForListingContent(page, context) {
   await page.goto(config.targetUrl, { waitUntil: 'domcontentloaded' });
 
   const deadline = Date.now() + config.navigationTimeoutMs;
   let challengeLogged = false;
+  let capsolverAttempted = false;
 
   while (Date.now() < deadline) {
     if (await page.locator('.tax-listing div[data-prefetch]').count()) {
@@ -387,6 +500,17 @@ async function waitForListingContent(page) {
         challengeLogged = true;
       }
 
+      // Thử giải bằng CapSolver (chỉ 1 lần)
+      if (!capsolverAttempted) {
+        capsolverAttempted = true;
+        const solved = await solveChallengeWithCapsolver(page, context, config.targetUrl);
+
+        if (solved) {
+          await page.waitForTimeout(2000);
+          continue;
+        }
+      }
+
       await page.waitForTimeout(3000);
       continue;
     }
@@ -403,17 +527,17 @@ async function waitForListingContent(page) {
   throw new Error('Listing content did not load before timeout.');
 }
 
-async function extractListingItems(page) {
-  await waitForListingContent(page);
+async function extractListingItems(page, context) {
+  await waitForListingContent(page, context);
 
   const items = await readListingItems(page);
 
   return items.filter((item) => item.detail_url && item.tax_code);
 }
 
-async function extractDetail(detailPage, listingItem) {
+async function extractDetail(detailPage, context, listingItem) {
   await detailPage.goto(listingItem.detail_url, { waitUntil: 'domcontentloaded' });
-  await waitForTableTaxInfo(detailPage, listingItem.detail_url);
+  await waitForTableTaxInfo(detailPage, context, listingItem.detail_url);
 
   const detail = await readDetail(detailPage);
   const phoneData = normalizePhonePayload(detail.phone);
@@ -451,7 +575,7 @@ async function scrapeMasothueBatch() {
   await blockHeavyAssets(context);
 
   try {
-    const listingItems = await extractListingItems(listPage);
+    const listingItems = await extractListingItems(listPage, context);
     const limitedItems = config.maxItemsPerRun > 0
       ? listingItems.slice(0, config.maxItemsPerRun)
       : listingItems;
@@ -461,7 +585,7 @@ async function scrapeMasothueBatch() {
     await context.storageState({ path: storageStatePath });
 
     for (const item of limitedItems) {
-      results.push(await extractDetail(detailPage, item));
+      results.push(await extractDetail(detailPage, context, item));
     }
 
     return results;
