@@ -414,7 +414,8 @@ async function solveChallengeWithCapsolver(page, context, targetUrl) {
 }
 
 async function waitForTableTaxInfo(page, context, detailUrl) {
-  const deadline = Date.now() + config.navigationTimeoutMs;
+  // Dùng let để có thể reset deadline sau khi CapSolver hoàn thành
+  let deadline = Date.now() + config.navigationTimeoutMs;
   let challengeLogged = false;
   let capsolverAttempted = false;
 
@@ -446,9 +447,14 @@ async function waitForTableTaxInfo(page, context, detailUrl) {
       }
 
       // Thử giải bằng CapSolver (chỉ 1 lần để tránh lãng phí credit)
+      // CapSolver có thể mất 30–120s, nên phải reset deadline sau khi await xong
+      // để vòng lặp còn đủ thời gian kiểm tra table-taxinfo.
       if (!capsolverAttempted) {
         capsolverAttempted = true;
         const solved = await solveChallengeWithCapsolver(page, context, detailUrl);
+
+        // Reset deadline kể từ thời điểm CapSolver trả về kết quả
+        deadline = Date.now() + config.navigationTimeoutMs;
 
         if (solved) {
           // Đợi thêm để trang render xong sau reload
@@ -470,7 +476,8 @@ async function waitForTableTaxInfo(page, context, detailUrl) {
 async function waitForListingContent(page, context) {
   await page.goto(config.targetUrl, { waitUntil: 'domcontentloaded' });
 
-  const deadline = Date.now() + config.navigationTimeoutMs;
+  // Dùng let để có thể reset deadline sau khi CapSolver hoàn thành
+  let deadline = Date.now() + config.navigationTimeoutMs;
   let challengeLogged = false;
   let capsolverAttempted = false;
 
@@ -501,9 +508,13 @@ async function waitForListingContent(page, context) {
       }
 
       // Thử giải bằng CapSolver (chỉ 1 lần)
+      // CapSolver có thể mất 30–120s, reset deadline sau khi await xong.
       if (!capsolverAttempted) {
         capsolverAttempted = true;
         const solved = await solveChallengeWithCapsolver(page, context, config.targetUrl);
+
+        // Reset deadline kể từ thời điểm CapSolver trả về kết quả
+        deadline = Date.now() + config.navigationTimeoutMs;
 
         if (solved) {
           await page.waitForTimeout(2000);
