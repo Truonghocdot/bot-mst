@@ -96,10 +96,32 @@ class MasothueIngestionService
                 true,
             )
             : [];
+        $previousTaxCodes = $batch->previous_batch_id
+            ? IngestionBatchItem::query()
+                ->where('ingestion_batch_id', $batch->previous_batch_id)
+                ->orderBy('id')
+                ->pluck('tax_code')
+                ->all()
+            : [];
+        $currentTaxCodes = array_map(
+            static fn (array $company): string => (string) ($company['tax_code'] ?? ''),
+            $companies,
+        );
         $hasReachedPreviousBatchItems = false;
         $results = [];
         $processedCompanyCount = 0;
         $newMarkedCount = 0;
+
+        $this->operationsLog->info('Masothue batch payload received by service.', [
+            'batch_key' => $batchKey,
+            'source' => $source,
+            'worker_name' => $workerName,
+            'company_count' => count($companies),
+            'previous_batch_id' => $batch->previous_batch_id,
+            'current_tax_codes' => $currentTaxCodes,
+            'previous_tax_codes' => $previousTaxCodes,
+            'companies' => $companies,
+        ]);
 
         try {
             foreach ($companies as $company) {
@@ -161,6 +183,22 @@ class MasothueIngestionService
                         'company_name' => $company['company_name'] ?? null,
                     ]);
                 }
+
+                $this->operationsLog->info('Masothue batch item comparison result.', [
+                    'batch_key' => $batchKey,
+                    'source' => $source,
+                    'listing_position' => $company['listing_position'] ?? null,
+                    'tax_code' => $company['tax_code'] ?? null,
+                    'company_name' => $company['company_name'] ?? null,
+                    'detail_url' => $company['detail_url'] ?? null,
+                    'phone' => $phoneData['phone'],
+                    'phone_numbers' => $phoneData['phone_numbers'],
+                    'exists_in_previous_batch' => $existsInPreviousBatch,
+                    'has_reached_previous_batch_items' => $hasReachedPreviousBatchItems,
+                    'has_primary_phone' => $hasPrimaryPhone,
+                    'is_new_tax_code_since_previous_batch' => $isNewTaxCodeSincePreviousBatch,
+                    'is_new_since_previous_batch' => $isNewSincePreviousBatch,
+                ]);
 
                 $processedCompanyCount++;
                 $results[] = array_merge($result, [
