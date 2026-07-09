@@ -452,7 +452,9 @@ async function scrapeMasothueBatch() {
 
   try {
     const listingItems = await extractListingItems(listPage);
-    const limitedItems = listingItems.slice(0, config.maxItemsPerRun);
+    const limitedItems = config.maxItemsPerRun > 0
+      ? listingItems.slice(0, config.maxItemsPerRun)
+      : listingItems;
     const results = [];
 
     fs.mkdirSync(path.dirname(storageStatePath), { recursive: true });

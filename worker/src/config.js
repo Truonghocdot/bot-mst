@@ -76,7 +76,7 @@ module.exports = {
   proxySessionId: readEnv('PROXY_SESSION_ID'),
   proxyCountry: readEnv('PROXY_COUNTRY', 'VN'),
   pollIntervalMs: readNumber('POLL_INTERVAL_MS', 5000),
-  maxItemsPerRun: readNumber('MAX_ITEMS_PER_RUN', 10),
+  maxItemsPerRun: readNumber('MAX_ITEMS_PER_RUN', 0),
   httpTimeoutMs: readNumber('HTTP_TIMEOUT_MS', 10000),
   retryAttempts: readNumber('RETRY_ATTEMPTS', 3),
   retryDelayMs: readNumber('RETRY_DELAY_MS', 2000),
