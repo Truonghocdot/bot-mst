@@ -4,6 +4,19 @@ const logQueue = [];
 let flushTimer = null;
 let isFlushing = false;
 
+function formatTimestamp(date = new Date()) {
+  return new Intl.DateTimeFormat('sv-SE', {
+    timeZone: config.timezoneId || 'Asia/Ho_Chi_Minh',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).format(date).replace(' ', 'T');
+}
+
 function sleep(ms) {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
@@ -29,7 +42,7 @@ function serializeContext(context) {
 }
 
 function writeConsole(level, message, context) {
-  const timestamp = new Date().toISOString();
+  const timestamp = formatTimestamp();
   const formatted = `[${timestamp}] [${level.toUpperCase()}] ${message}`;
 
   if (!context || Object.keys(context).length === 0) {
@@ -96,7 +109,7 @@ async function flush() {
       throw new Error(`Core log API responded with ${response.status}: ${body}`);
     }
   } catch (error) {
-    console.warn(`[${new Date().toISOString()}] [WARN] Failed to push worker logs to core.`, {
+    console.warn(`[${formatTimestamp()}] [WARN] Failed to push worker logs to core.`, {
       error: error.message,
     });
 
@@ -126,7 +139,7 @@ function log(level, message, context = {}, event = null) {
     message,
     worker_name: config.workerName,
     source: config.workerSource,
-    timestamp: new Date().toISOString(),
+    timestamp: formatTimestamp(),
     context: serializedContext,
   });
 }

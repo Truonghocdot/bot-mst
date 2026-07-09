@@ -59,7 +59,7 @@ class SendTelegramMarkedItemAlert implements ShouldQueue
         }
 
         $message = implode("\n", array_filter([
-            'Du lieu moi tu MaSoThue',
+            'Dữ liệu mới từ MaSoThue',
             'Ten: '.$item->company_name,
             'MST: '.$item->tax_code,
             $item->phone ? 'SDT: '.$item->phone : null,
