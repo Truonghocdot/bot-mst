@@ -7,6 +7,7 @@ use App\Models\CompanyLead;
 use App\Models\CompanyLeadEvent;
 use App\Models\IngestionBatch;
 use App\Models\IngestionBatchItem;
+use App\Models\TelegramDestinationDelivery;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Redis;
@@ -197,6 +198,102 @@ class MasothueIngestionService
         Redis::connection('default')->del($batchKey);
 
         return $results;
+    }
+
+    /**
+     * Clear transient comparison data so the next crawl starts fresh.
+     *
+     * @return array<string, int|string|null>
+     */
+    public function clearComparisonData(string $source = 'masothue'): array
+    {
+        $summary = DB::transaction(function () use ($source): array {
+            $batchIds = IngestionBatch::query()
+                ->where('source', $source)
+                ->pluck('id');
+
+            $deliveryCount = TelegramDestinationDelivery::query()
+                ->whereIn('ingestion_batch_item_id', IngestionBatchItem::query()
+                    ->whereIn('ingestion_batch_id', $batchIds)
+                    ->select('id'))
+                ->delete();
+
+            $batchItemCount = IngestionBatchItem::query()
+                ->whereIn('ingestion_batch_id', $batchIds)
+                ->delete();
+
+            $eventCount = CompanyLeadEvent::query()
+                ->where('source', $source)
+                ->delete();
+
+            $batchCount = IngestionBatch::query()
+                ->where('source', $source)
+                ->delete();
+
+            $leadCount = CompanyLead::query()
+                ->where('source', $source)
+                ->delete();
+
+            return [
+                'source' => $source,
+                'deliveries_deleted' => $deliveryCount,
+                'batch_items_deleted' => $batchItemCount,
+                'events_deleted' => $eventCount,
+                'batches_deleted' => $batchCount,
+                'leads_deleted' => $leadCount,
+            ];
+        });
+
+        $redisSummary = $this->clearRedisBatchKeys($source, false);
+        $summary['redis_batch_keys_deleted'] = $redisSummary['deleted'];
+
+        $this->operationsLog->info('Cleared Masothue comparison data.', $summary);
+
+        return $summary;
+    }
+
+    /**
+     * Clear Redis batch keys immediately and optionally keep the latest current batch key.
+     *
+     * @return array{source: string, kept_batch_key: ?string, deleted: int, scanned: int}
+     */
+    public function clearRedisBatchKeys(string $source = 'masothue', bool $keepCurrentBatch = true): array
+    {
+        $currentBatchKey = null;
+        $prefix = (string) config('database.redis.options.prefix', '');
+
+        if ($keepCurrentBatch) {
+            $currentBatchKey = IngestionBatch::query()
+                ->where('source', $source)
+                ->latest('id')
+                ->value('batch_key');
+        }
+
+        $keys = Redis::connection('default')->keys(self::REDIS_BATCH_KEY_PREFIX.'*');
+        $deleted = 0;
+
+        foreach ($keys as $key) {
+            $plainKey = $prefix !== '' && str_starts_with($key, $prefix)
+                ? substr($key, strlen($prefix))
+                : $key;
+
+            if ($keepCurrentBatch && $currentBatchKey !== null && $plainKey === $currentBatchKey) {
+                continue;
+            }
+
+            $deleted += (int) Redis::connection('default')->del($plainKey);
+        }
+
+        $summary = [
+            'source' => $source,
+            'kept_batch_key' => $keepCurrentBatch ? $currentBatchKey : null,
+            'deleted' => $deleted,
+            'scanned' => count($keys),
+        ];
+
+        $this->operationsLog->info('Cleared Redis batch keys.', $summary);
+
+        return $summary;
     }
 
     /**

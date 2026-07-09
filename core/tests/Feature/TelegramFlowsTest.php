@@ -2,6 +2,7 @@
 
 use App\Jobs\SendTelegramMarkedItemAlert;
 use App\Models\CompanyLead;
+use App\Models\CompanyLeadEvent;
 use App\Models\IngestionBatch;
 use App\Models\IngestionBatchItem;
 use App\Models\TelegramDestination;
@@ -10,6 +11,7 @@ use App\Services\MasothueIngestionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Redis;
 
 uses(RefreshDatabase::class);
 
@@ -246,4 +248,103 @@ test('batch comparison only marks a new tax code when a primary phone exists', f
 
     expect($latestBatch)->not->toBeNull();
     expect($latestBatch->new_marked_count)->toBe(1);
+});
+
+test('clear comparison data removes transient state but keeps telegram destinations', function () {
+    $service = app(MasothueIngestionService::class);
+
+    $destination = TelegramDestination::query()->create([
+        'label' => 'Group Keep',
+        'chat_id' => '-100123123123',
+        'source' => 'manual',
+        'is_active' => true,
+    ]);
+
+    $batch = IngestionBatch::query()->create([
+        'source' => 'masothue',
+        'batch_key' => 'masothue:batch:clear-data',
+        'status' => 'processed',
+        'company_count' => 1,
+        'processed_company_count' => 1,
+        'new_marked_count' => 1,
+    ]);
+
+    $lead = CompanyLead::query()->create([
+        'source' => 'masothue',
+        'tax_code' => 'CLEAR001',
+        'company_name' => 'CÔNG TY CLEAR',
+        'detail_url' => 'https://example.com/clear',
+    ]);
+
+    $item = IngestionBatchItem::query()->create([
+        'ingestion_batch_id' => $batch->id,
+        'company_lead_id' => $lead->id,
+        'source' => 'masothue',
+        'comparison_key' => sha1('masothue|CLEAR001'),
+        'tax_code' => 'CLEAR001',
+        'company_name' => 'CÔNG TY CLEAR',
+        'detail_url' => 'https://example.com/clear',
+        'is_new_since_previous_batch' => true,
+        'marked_at' => now(),
+    ]);
+
+    CompanyLeadEvent::query()->create([
+        'company_lead_id' => $lead->id,
+        'source' => 'masothue',
+        'dedupe_key' => sha1('clear-event'),
+        'observed_at' => now(),
+        'payload' => [],
+    ]);
+
+    TelegramDestinationDelivery::query()->create([
+        'ingestion_batch_item_id' => $item->id,
+        'telegram_destination_id' => $destination->id,
+        'status' => 'sent',
+        'attempt_count' => 1,
+        'sent_at' => now(),
+    ]);
+
+    Redis::connection('default')->setex('masothue:batch:clear-data', 300, 'payload');
+
+    $summary = $service->clearComparisonData('masothue');
+
+    expect($summary['batches_deleted'])->toBe(1);
+    expect($summary['batch_items_deleted'])->toBe(1);
+    expect($summary['events_deleted'])->toBe(1);
+    expect($summary['leads_deleted'])->toBe(1);
+    expect($summary['redis_batch_keys_deleted'])->toBeGreaterThanOrEqual(1);
+
+    expect(IngestionBatch::query()->count())->toBe(0);
+    expect(IngestionBatchItem::query()->count())->toBe(0);
+    expect(CompanyLeadEvent::query()->count())->toBe(0);
+    expect(CompanyLead::query()->count())->toBe(0);
+    expect(TelegramDestinationDelivery::query()->count())->toBe(0);
+    expect(TelegramDestination::query()->count())->toBe(1);
+});
+
+test('clear redis batch keys keeps the current latest batch key by default', function () {
+    $service = app(MasothueIngestionService::class);
+
+    IngestionBatch::query()->create([
+        'source' => 'masothue',
+        'batch_key' => 'masothue:batch:older',
+        'status' => 'processed',
+        'company_count' => 1,
+    ]);
+
+    IngestionBatch::query()->create([
+        'source' => 'masothue',
+        'batch_key' => 'masothue:batch:current',
+        'status' => 'processed',
+        'company_count' => 1,
+    ]);
+
+    Redis::connection('default')->setex('masothue:batch:older', 300, 'older');
+    Redis::connection('default')->setex('masothue:batch:current', 300, 'current');
+
+    $summary = $service->clearRedisBatchKeys('masothue');
+
+    expect($summary['kept_batch_key'])->toBe('masothue:batch:current');
+    expect((bool) Redis::connection('default')->exists('masothue:batch:current'))->toBeTrue();
+    expect((bool) Redis::connection('default')->exists('masothue:batch:older'))->toBeFalse();
 });
