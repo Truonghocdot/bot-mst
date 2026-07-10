@@ -90,6 +90,18 @@ function browserTypeFor(name) {
   return browserType;
 }
 
+function buildListingRequestUrl() {
+  if (!config.disablePageCache) {
+    return config.targetUrl;
+  }
+
+  const url = new URL(config.targetUrl);
+
+  url.searchParams.set('_cb', `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+
+  return url.toString();
+}
+
 function createLaunchOptions(proxyServer = config.proxyServer) {
   const launchOptions = {
     headless: config.headless,
@@ -145,6 +157,12 @@ function createContextOptions(storageStatePath, hasStorageState) {
     locale: config.locale,
     timezoneId: config.timezoneId,
     userAgent: config.userAgent,
+    extraHTTPHeaders: config.disablePageCache
+      ? {
+        'Cache-Control': 'no-cache, no-store, max-age=0',
+        Pragma: 'no-cache',
+      }
+      : undefined,
     viewport: {
       width: config.viewportWidth,
       height: config.viewportHeight,
@@ -333,7 +351,20 @@ async function solveChallengeWithCapsolver(page, context, targetUrl) {
 }
 
 async function waitForListingContent(page, context) {
-  await page.goto(config.targetUrl, { waitUntil: 'domcontentloaded' });
+  const requestUrl = buildListingRequestUrl();
+  const response = await page.goto(requestUrl, { waitUntil: 'domcontentloaded' });
+  const responseHeaders = response ? await response.allHeaders().catch(() => ({})) : {};
+
+  logger.info('Listing page response received.', {
+    requestUrl,
+    finalUrl: page.url(),
+    status: response?.status?.() ?? null,
+    cacheControl: responseHeaders['cache-control'] || null,
+    cfCacheStatus: responseHeaders['cf-cache-status'] || null,
+    age: responseHeaders.age || null,
+    lastModified: responseHeaders['last-modified'] || null,
+    cfRay: responseHeaders['cf-ray'] || null,
+  }, 'worker.listing_response');
 
   // Dùng let để có thể reset deadline sau khi CapSolver hoàn thành
   let deadline = Date.now() + config.navigationTimeoutMs;

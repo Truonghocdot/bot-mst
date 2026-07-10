@@ -67,6 +67,7 @@ module.exports = {
   timezoneId: readEnv('PLAYWRIGHT_TIMEZONE_ID', 'Asia/Ho_Chi_Minh'),
   viewportWidth: readNumber('PLAYWRIGHT_VIEWPORT_WIDTH', 1366),
   viewportHeight: readNumber('PLAYWRIGHT_VIEWPORT_HEIGHT', 768),
+  disablePageCache: readBoolean('PLAYWRIGHT_DISABLE_PAGE_CACHE', true),
   proxyEnabled: readBoolean('PROXY_ENABLED', false),
   proxyType: readEnv('PROXY_TYPE', 'sticky_residential'),
   proxyServer: readEnv('PROXY_SERVER'),
