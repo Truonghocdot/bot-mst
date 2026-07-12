@@ -106,10 +106,22 @@ function parseProxyToCapsolverFormat(rawProxy, username = '', password = '') {
  *
  * @returns {string[]}
  */
-function buildCapsolverProxyList() {
+function buildCapsolverProxyList(preferredProxy = null) {
   const list = [];
   const user = config.proxyUsername || '';
   const pass = config.proxyPassword || '';
+
+  if (preferredProxy?.server) {
+    const formatted = parseProxyToCapsolverFormat(
+      preferredProxy.server,
+      preferredProxy.username || '',
+      preferredProxy.password || ''
+    );
+
+    if (formatted) {
+      list.push(formatted);
+    }
+  }
 
   // Ưu tiên 1: CAPSOLVER_PROXY explicit
   if (config.capsolverProxy) {
@@ -267,12 +279,12 @@ async function pollTaskResult(taskId) {
  * @param {string|null} [params.html]
  * @returns {Promise<{ cfClearance: string|null, userAgent: string|null, cookies: object, taskId: string }>}
  */
-async function solveCloudflareChallenge({ websiteUrl, html = null }) {
+async function solveCloudflareChallenge({ websiteUrl, html = null, preferredProxy = null }) {
   if (!config.capsolverApiKey) {
     throw new Error('CAPSOLVER_API_KEY chưa được cấu hình.');
   }
 
-  const proxyList = buildCapsolverProxyList();
+  const proxyList = buildCapsolverProxyList(preferredProxy);
   // Luôn thêm slot "không proxy" vào cuối làm last resort
   const proxiesToTry = proxyList.length > 0 ? [...proxyList, null] : [null];
   let lastError;

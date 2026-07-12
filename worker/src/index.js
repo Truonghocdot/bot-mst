@@ -1,6 +1,7 @@
 const config = require('./config');
 const { pushBatch } = require('./core-api-client');
 const logger = require('./logger');
+const { fetchRotatingProxyConfig } = require('./proxy-config-client');
 const { scrapeMasothueBatch } = require('./masothue-scraper');
 
 function sleep(ms) {
@@ -14,7 +15,28 @@ async function runOnce() {
     target_url: config.targetUrl,
   }, 'worker.cycle_started');
 
-  const companies = await scrapeMasothueBatch();
+  let rotatingProxy = null;
+
+  try {
+    rotatingProxy = await fetchRotatingProxyConfig();
+  } catch (error) {
+    logger.warn('Failed to fetch rotating proxy config from core.', {
+      error: error.message,
+    }, 'worker.proxy_fetch_failed');
+  }
+
+  if (rotatingProxy) {
+    logger.info('Using rotating proxy provided by core.', {
+      server: rotatingProxy.server,
+      location: rotatingProxy.location,
+      network: rotatingProxy.network,
+      expiresInSeconds: rotatingProxy.expiresInSeconds,
+    }, 'worker.proxy_runtime');
+  }
+
+  const companies = await scrapeMasothueBatch({
+    runtimeProxy: rotatingProxy,
+  });
 
   if (companies.length === 0) {
     logger.warn('No companies found on the listing page.', {}, 'worker.empty');

@@ -102,48 +102,92 @@ function buildListingRequestUrl() {
   return url.toString();
 }
 
-function createLaunchOptions(proxyServer = config.proxyServer) {
+function normalizeProxyConfig(proxyConfig) {
+  if (!proxyConfig?.server) {
+    return null;
+  }
+
+  return {
+    server: String(proxyConfig.server),
+    username: proxyConfig.username ? String(proxyConfig.username) : null,
+    password: proxyConfig.password ? String(proxyConfig.password) : null,
+    source: proxyConfig.source ? String(proxyConfig.source) : 'runtime',
+  };
+}
+
+function createLaunchOptions(proxyConfig = null) {
   const launchOptions = {
     headless: config.headless,
   };
 
-  if (config.proxyEnabled && proxyServer) {
+  if (proxyConfig?.server) {
     launchOptions.proxy = {
-      server: proxyServer,
+      server: proxyConfig.server,
     };
 
-    if (config.proxyUsername) {
-      launchOptions.proxy.username = config.proxyUsername;
+    if (proxyConfig.username) {
+      launchOptions.proxy.username = proxyConfig.username;
     }
 
-    if (config.proxyPassword) {
-      launchOptions.proxy.password = config.proxyPassword;
+    if (proxyConfig.password) {
+      launchOptions.proxy.password = proxyConfig.password;
     }
   }
 
   return launchOptions;
 }
 
-async function launchBrowser(browserType) {
-  if (!config.proxyEnabled) {
+async function launchBrowser(browserType, runtimeProxy = null) {
+  const candidates = [];
+  let lastError;
+
+  if (runtimeProxy?.server) {
+    candidates.push({
+      ...normalizeProxyConfig(runtimeProxy),
+      logSource: runtimeProxy.source || 'core',
+      logType: 'rotating',
+    });
+  }
+
+  if (config.proxyEnabled) {
+    const envProxyCandidates = [
+      {
+        server: config.proxyServer,
+        username: config.proxyUsername,
+        password: config.proxyPassword,
+        logSource: 'env_primary',
+        logType: config.proxyType,
+      },
+      {
+        server: config.proxyFallbackServer,
+        username: config.proxyUsername,
+        password: config.proxyPassword,
+        logSource: 'env_fallback',
+        logType: config.proxyType,
+      },
+    ].filter((candidate) => candidate.server);
+
+    candidates.push(...envProxyCandidates);
+  }
+
+  if (candidates.length === 0) {
     return browserType.launch(createLaunchOptions());
   }
 
-  const proxyServers = [config.proxyServer, config.proxyFallbackServer].filter(Boolean);
-  let lastError;
-
-  for (const proxyServer of proxyServers) {
+  for (const candidate of candidates) {
     try {
       logger.info('Launching browser with proxy.', {
-        proxyServer,
-        proxyType: config.proxyType,
+        proxyServer: candidate.server,
+        proxyType: candidate.logType,
+        proxySource: candidate.logSource,
       }, 'worker.proxy_launch');
 
-      return await browserType.launch(createLaunchOptions(proxyServer));
+      return await browserType.launch(createLaunchOptions(candidate));
     } catch (error) {
       lastError = error;
       logger.warn('Failed to launch browser with proxy.', {
-        proxyServer,
+        proxyServer: candidate.server,
+        proxySource: candidate.logSource,
         error: error.message,
       }, 'worker.proxy_launch_failed');
     }
@@ -311,7 +355,7 @@ async function injectCfClearance(context, solution, targetUrl) {
  * @param {string} targetUrl - URL trang đang bị block
  * @returns {Promise<boolean>} true nếu giải thành công
  */
-async function solveChallengeWithCapsolver(page, context, targetUrl) {
+async function solveChallengeWithCapsolver(page, context, targetUrl, runtimeProxy = null) {
   if (!config.capsolverEnabled || !config.capsolverApiKey) {
     logger.warn('CapSolver bị tắt hoặc thiếu API key — bỏ qua bypass.', {
       enabled: config.capsolverEnabled,
@@ -330,7 +374,11 @@ async function solveChallengeWithCapsolver(page, context, targetUrl) {
   }, 'capsolver.solving');
 
   try {
-    const solution = await solveCloudflareChallenge({ websiteUrl: targetUrl, html });
+    const solution = await solveCloudflareChallenge({
+      websiteUrl: targetUrl,
+      html,
+      preferredProxy: runtimeProxy,
+    });
     await injectCfClearance(context, solution, targetUrl);
 
     // Reload trang để dùng cookie cf_clearance vừa inject
@@ -350,7 +398,7 @@ async function solveChallengeWithCapsolver(page, context, targetUrl) {
   }
 }
 
-async function waitForListingContent(page, context) {
+async function waitForListingContent(page, context, runtimeProxy = null) {
   const requestUrl = buildListingRequestUrl();
   const response = await page.goto(requestUrl, { waitUntil: 'domcontentloaded' });
   const responseHeaders = response ? await response.allHeaders().catch(() => ({})) : {};
@@ -401,7 +449,7 @@ async function waitForListingContent(page, context) {
       // CapSolver có thể mất 30–120s, reset deadline sau khi await xong.
       if (!capsolverAttempted) {
         capsolverAttempted = true;
-        const solved = await solveChallengeWithCapsolver(page, context, config.targetUrl);
+        const solved = await solveChallengeWithCapsolver(page, context, config.targetUrl, runtimeProxy);
 
         // Reset deadline kể từ thời điểm CapSolver trả về kết quả
         deadline = Date.now() + config.navigationTimeoutMs;
@@ -438,8 +486,8 @@ async function waitForListingContent(page, context) {
   throw new Error('Listing content did not load before timeout.');
 }
 
-async function extractListingItems(page, context) {
-  await waitForListingContent(page, context);
+async function extractListingItems(page, context, runtimeProxy = null) {
+  await waitForListingContent(page, context, runtimeProxy);
 
   const observedAt = new Date().toISOString();
   const items = await readListingItems(page);
@@ -460,9 +508,10 @@ async function extractListingItems(page, context) {
     });
 }
 
-async function scrapeMasothueBatch() {
+async function scrapeMasothueBatch(options = {}) {
+  const runtimeProxy = normalizeProxyConfig(options.runtimeProxy);
   const browserType = browserTypeFor(config.browser);
-  const browser = await launchBrowser(browserType);
+  const browser = await launchBrowser(browserType, runtimeProxy);
   const storageStatePath = path.resolve(__dirname, '..', config.storageStatePath);
   const hasStorageState = fs.existsSync(storageStatePath);
   const context = await browser.newContext(createContextOptions(storageStatePath, hasStorageState));
@@ -474,7 +523,7 @@ async function scrapeMasothueBatch() {
   await blockHeavyAssets(context);
 
   try {
-    const listingItems = await extractListingItems(listPage, context);
+    const listingItems = await extractListingItems(listPage, context, runtimeProxy);
     const limitedItems = config.maxItemsPerRun > 0
       ? listingItems.slice(0, config.maxItemsPerRun)
       : listingItems;

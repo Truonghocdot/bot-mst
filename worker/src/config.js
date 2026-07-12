@@ -84,6 +84,7 @@ module.exports = {
   debugArtifactsDir: readEnv('PLAYWRIGHT_DEBUG_ARTIFACTS_DIR', '.playwright/debug'),
   coreApiBaseUrl: requireEnv('CORE_API_BASE_URL'),
   coreApiEndpoint: readEnv('CORE_API_ENDPOINT', '/api/ingestions/masothue'),
+  coreProxyEndpoint: readEnv('CORE_PROXY_ENDPOINT', '/api/worker/proxy'),
   coreApiToken: requireEnv('CORE_API_TOKEN'),
   coreLogsEnabled: readBoolean('CORE_LOGS_ENABLED', true),
   coreLogsEndpoint: readEnv('CORE_LOGS_ENDPOINT', '/api/logs/worker'),

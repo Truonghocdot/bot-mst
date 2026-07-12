@@ -1,22 +1,35 @@
-<div>
-    <div class="topbar">
+<div class="page-stack">
+    <section class="hero-card">
         <div>
-            <div class="brand">Bảng điều khiển Telegram</div>
-            <div class="muted">Quản lý chat ID nhận cảnh báo và xem danh sách dữ liệu mới được đánh dấu.</div>
+            <div class="eyebrow">Telegram Delivery</div>
+            <h1>Quản lý chat nhận cảnh báo</h1>
+            <p class="hero-copy">
+                Theo dõi các chat ID mà bot được phép gửi tới, bật hoặc tắt từng đích nhận, và xem nhanh những doanh nghiệp
+                mới vừa được worker đánh dấu từ MaSoThue.
+            </p>
         </div>
 
-        <form method="POST" action="{{ route('admin.logout') }}">
-            @csrf
-            <a href="{{ url('/admin/logs') }}" class="btn-secondary" style="text-decoration:none;">Xem log</a>
-            <button class="btn-secondary" type="submit">Đăng xuất</button>
-        </form>
-    </div>
+        <div class="hero-aside">
+            <div class="hero-stat">
+                <span class="hero-stat-label">Tổng chat ID</span>
+                <strong>{{ $destinations->count() }}</strong>
+            </div>
+            <div class="hero-stat">
+                <span class="hero-stat-label">Đang bật</span>
+                <strong>{{ $destinations->where('is_active', true)->count() }}</strong>
+            </div>
+            <div class="hero-stat">
+                <span class="hero-stat-label">Item mới gần đây</span>
+                <strong>{{ $markedItems->count() }}</strong>
+            </div>
+        </div>
+    </section>
 
     @if (session('status'))
         <div class="status">{{ session('status') }}</div>
     @endif
 
-    <div class="grid">
+    <div class="grid grid-default">
         <section class="panel stack">
             <div>
                 <h2>{{ $editingId ? 'Cập nhật chat ID' : 'Thêm chat ID mới' }}</h2>
@@ -41,7 +54,7 @@
                 @error('notes') <span class="error">{{ $message }}</span> @enderror
             </label>
 
-            <label style="grid-template-columns: 20px 1fr; align-items: center; gap: 10px;">
+            <label class="checkbox-line">
                 <input type="checkbox" wire:model="isActive">
                 <span>Kích hoạt gửi đến chat ID này</span>
             </label>
@@ -120,7 +133,7 @@
         </section>
     </div>
 
-    <section class="panel stack" style="margin-top: 20px;">
+    <section class="panel stack">
         <div>
             <h2>Dữ liệu mới được đánh dấu</h2>
             <div class="muted">So sánh với batch ngay trước đó. Những item ở đây là các dữ liệu mới sẽ được đẩy qua Telegram tới các chat ID đang bật.</div>
