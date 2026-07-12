@@ -55,6 +55,10 @@ WORKER_API_TOKEN=...
 ADMIN_PANEL_PASSWORD=...
 
 DB_CONNECTION=sqlite
+DB_SQLITE_BUSY_TIMEOUT=10000
+DB_SQLITE_JOURNAL_MODE=WAL
+DB_SQLITE_SYNCHRONOUS=NORMAL
+DB_SQLITE_TRANSACTION_MODE=DEFERRED
 SESSION_DRIVER=database
 QUEUE_CONNECTION=redis
 CACHE_STORE=redis
@@ -74,6 +78,11 @@ sudo -u www-data php artisan config:cache
 sudo -u www-data php artisan route:cache
 sudo -u www-data php artisan view:cache
 ```
+
+Goi y tam thoi de giam loi `database is locked` khi van con dung SQLite:
+- `DB_SQLITE_BUSY_TIMEOUT=10000`
+- `DB_SQLITE_JOURNAL_MODE=WAL`
+- `DB_SQLITE_SYNCHRONOUS=NORMAL`
 
 ## 5. Cau hinh `worker/.env`
 
