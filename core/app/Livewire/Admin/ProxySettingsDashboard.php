@@ -74,8 +74,10 @@ class ProxySettingsDashboard extends Component
         $this->resetErrorBag();
 
         try {
-            $this->lastResolvedProxy = $proxyRotationService->resolveWorkerProxy();
-            session()->flash('status', 'Đã lấy proxy mới từ nhà cung cấp.');
+            $this->lastResolvedProxy = $proxyRotationService->refreshWorkerProxy();
+            session()->flash('status', data_get($this->lastResolvedProxy, 'refresh_skipped')
+                ? 'Nhà cung cấp chưa cho đổi proxy mới, đang giữ proxy hiện tại.'
+                : 'Đã lấy proxy mới từ nhà cung cấp.');
         } catch (\Throwable $exception) {
             $this->addError('proxyResolution', $exception->getMessage());
         } finally {

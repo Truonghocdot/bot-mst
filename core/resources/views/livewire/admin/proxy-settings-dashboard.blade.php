@@ -4,8 +4,8 @@
             <div class="eyebrow">Worker Proxy Control</div>
             <h1>Cấu hình proxy xoay cho collector</h1>
             <p class="hero-copy">
-                Worker sẽ gọi core trước mỗi vòng crawl để lấy proxy mới. Core dùng token cấu hình ở đây để hỏi nhà cung cấp
-                proxy xoay, sau đó trả lại proxy HTTP cho worker chạy qua.
+                Worker sẽ gọi core trước mỗi vòng crawl để lấy proxy hiện hành. Core dùng token cấu hình ở đây để làm mới
+                proxy theo lịch hoặc khi bạn bấm test thủ công, rồi trả lại proxy HTTP đang được giữ cho worker chạy qua.
             </p>
         </div>
 
@@ -112,7 +112,7 @@
         <section class="panel stack">
             <div>
                 <h2>Proxy gần nhất cấp cho worker</h2>
-                <div class="muted">Dùng để kiểm tra worker đang được core trả về proxy gì trước mỗi vòng crawl.</div>
+                <div class="muted">Dùng để kiểm tra worker đang được core trả về proxy gì trước mỗi vòng crawl và liệu core có đang giữ lại proxy cũ do cooldown hay không.</div>
             </div>
 
             <div class="metric-grid">

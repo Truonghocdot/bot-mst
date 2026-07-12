@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use App\Models\ProxySetting;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 
 class ProxyRotationService
@@ -43,7 +42,6 @@ class ProxyRotationService
         ]);
 
         $settings->save();
-        Cache::forget($this->cacheKey($settings->scope));
 
         return $settings->refresh();
     }
@@ -51,7 +49,33 @@ class ProxyRotationService
     /**
      * @return array<string, mixed>
      */
-    public function resolveWorkerProxy(): array
+    public function getCurrentWorkerProxy(): array
+    {
+        $settings = $this->getSettings();
+
+        if (! $settings->is_enabled) {
+            return [
+                'enabled' => false,
+                'provider' => $settings->provider,
+                'message' => 'Rotating proxy is disabled.',
+            ];
+        }
+
+        if (! $settings->last_proxy_http) {
+            return [
+                'enabled' => false,
+                'provider' => $settings->provider,
+                'message' => 'No resolved proxy is available yet.',
+            ];
+        }
+
+        return $this->formatResolvedProxy($settings, $this->storedProxyPayload($settings), false);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function refreshWorkerProxy(): array
     {
         $settings = $this->getSettings();
 
@@ -67,20 +91,6 @@ class ProxyRotationService
             throw $this->storeFailure($settings, 'Proxy API key is missing.');
         }
 
-        $cachedProxy = $this->getCachedProxyPayload($settings->scope);
-
-        if ($cachedProxy !== null) {
-            return $this->formatResolvedProxy($settings, $cachedProxy, true);
-        }
-
-        $storedProxy = $this->getReusableStoredProxy($settings);
-
-        if ($storedProxy !== null) {
-            $this->rememberProxyPayload($settings->scope, $storedProxy, $storedProxy['expires_in_seconds'] ?? null);
-
-            return $this->formatResolvedProxy($settings, $storedProxy, true);
-        }
-
         try {
             $response = $this->sendProviderRequest($settings);
             $payload = $response->json();
@@ -92,14 +102,32 @@ class ProxyRotationService
             if ((int) ($payload['status'] ?? 0) !== 100) {
                 $message = (string) ($payload['message'] ?? 'Proxy provider returned an unsuccessful status.');
 
+                $settings->forceFill([
+                    'last_error_message' => $message,
+                ])->save();
+
+                if ($settings->last_proxy_http) {
+                    return array_merge(
+                        $this->formatResolvedProxy($settings, $this->storedProxyPayload($settings), false),
+                        [
+                            'provider_message' => $message,
+                            'refresh_skipped' => true,
+                        ],
+                    );
+                }
+
                 throw new \RuntimeException($message);
             }
 
             $resolvedProxy = $this->persistResolvedProxy($settings, $payload);
 
-            $this->rememberProxyPayload($settings->scope, $resolvedProxy, $resolvedProxy['expires_in_seconds'] ?? null);
-
-            return $this->formatResolvedProxy($settings, $resolvedProxy, false);
+            return array_merge(
+                $this->formatResolvedProxy($settings, $resolvedProxy, false),
+                [
+                    'provider_message' => (string) ($payload['message'] ?? ''),
+                    'refresh_skipped' => false,
+                ],
+            );
         } catch (\Throwable $exception) {
             throw $this->storeFailure($settings, $exception->getMessage());
         }
@@ -212,31 +240,10 @@ class ProxyRotationService
     }
 
     /**
-     * @return array<string, mixed>|null
+     * @return array<string, mixed>
      */
-    private function getCachedProxyPayload(string $scope): ?array
+    private function storedProxyPayload(ProxySetting $settings): array
     {
-        $payload = Cache::get($this->cacheKey($scope));
-
-        return is_array($payload) ? $payload : null;
-    }
-
-    /**
-     * @return array<string, mixed>|null
-     */
-    private function getReusableStoredProxy(ProxySetting $settings): ?array
-    {
-        if (! $settings->last_proxy_http || ! $settings->last_resolved_at || ! $settings->last_expires_in_seconds) {
-            return null;
-        }
-
-        $expiresAt = $settings->last_resolved_at->copy()->addSeconds((int) $settings->last_expires_in_seconds);
-        $remainingSeconds = now()->diffInSeconds($expiresAt, false);
-
-        if ($remainingSeconds <= 0) {
-            return null;
-        }
-
         return [
             'server' => $settings->last_proxy_http,
             'username' => null,
@@ -244,22 +251,10 @@ class ProxyRotationService
             'socks5_server' => $settings->last_proxy_socks5,
             'network' => $settings->last_network,
             'location' => $settings->last_location,
-            'expires_in_seconds' => $remainingSeconds,
-            'resolved_at' => $settings->last_resolved_at->toIso8601String(),
+            'expires_in_seconds' => $settings->last_expires_in_seconds,
+            'resolved_at' => $settings->last_resolved_at?->toIso8601String(),
             'provider_payload' => $settings->last_provider_response,
         ];
-    }
-
-    /**
-     * @param  array<string, mixed>  $payload
-     */
-    private function rememberProxyPayload(string $scope, array $payload, ?int $ttlSeconds): void
-    {
-        if ($ttlSeconds === null || $ttlSeconds <= 0) {
-            return;
-        }
-
-        Cache::put($this->cacheKey($scope), $payload, now()->addSeconds($ttlSeconds));
     }
 
     /**
@@ -282,11 +277,6 @@ class ProxyRotationService
             'provider_payload' => $payload['provider_payload'] ?? null,
             'cache_hit' => $cacheHit,
         ];
-    }
-
-    private function cacheKey(string $scope): string
-    {
-        return "worker_proxy:{$scope}";
     }
 
     private function storeFailure(ProxySetting $settings, string $message): \RuntimeException

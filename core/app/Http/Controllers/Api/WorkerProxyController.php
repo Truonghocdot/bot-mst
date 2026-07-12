@@ -22,7 +22,7 @@ class WorkerProxyController extends Controller
         }
 
         try {
-            $proxy = $proxyRotationService->resolveWorkerProxy();
+            $proxy = $proxyRotationService->getCurrentWorkerProxy();
 
             return response()->json([
                 'ok' => true,

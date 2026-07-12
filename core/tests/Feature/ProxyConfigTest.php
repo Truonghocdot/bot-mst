@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\ProxySetting;
+use App\Services\ProxyRotationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 
@@ -33,9 +34,41 @@ test('worker proxy endpoint returns disabled when rotating proxy is off', functi
         ]);
 });
 
-test('worker proxy endpoint resolves a rotating proxy from provider response', function () {
+test('worker proxy endpoint returns the current stored proxy', function () {
     config()->set('services.worker.token', 'worker-secret');
 
+    ProxySetting::query()->create([
+        'scope' => 'worker',
+        'is_enabled' => true,
+        'provider' => 'proxyxoay.shop',
+        'last_proxy_http' => 'http://42.117.243.215:10836',
+        'last_proxy_socks5' => 'http://42.117.243.215:30836',
+        'last_network' => 'fpt',
+        'last_location' => 'HaNoi1',
+        'last_expires_in_seconds' => 1777,
+        'last_resolved_at' => now(),
+    ]);
+
+    $response = $this->withHeader('Authorization', 'Bearer worker-secret')
+        ->getJson('/api/worker/proxy');
+
+    $response->assertOk()
+        ->assertJson([
+            'ok' => true,
+            'enabled' => true,
+            'proxy' => [
+                'enabled' => true,
+                'provider' => 'proxyxoay.shop',
+                'server' => 'http://42.117.243.215:10836',
+                'socks5_server' => 'http://42.117.243.215:30836',
+                'network' => 'fpt',
+                'location' => 'HaNoi1',
+                'expires_in_seconds' => 1777,
+            ],
+        ]);
+});
+
+test('refresh worker proxy stores a new proxy from provider response', function () {
     ProxySetting::query()->create([
         'scope' => 'worker',
         'is_enabled' => true,
@@ -59,23 +92,10 @@ test('worker proxy endpoint resolves a rotating proxy from provider response', f
         ], 200),
     ]);
 
-    $response = $this->withHeader('Authorization', 'Bearer worker-secret')
-        ->getJson('/api/worker/proxy');
+    $resolved = app(ProxyRotationService::class)->refreshWorkerProxy();
 
-    $response->assertOk()
-        ->assertJson([
-            'ok' => true,
-            'enabled' => true,
-            'proxy' => [
-                'enabled' => true,
-                'provider' => 'proxyxoay.shop',
-                'server' => 'http://42.117.243.215:10836',
-                'socks5_server' => 'http://42.117.243.215:30836',
-                'network' => 'fpt',
-                'location' => 'HaNoi1',
-                'expires_in_seconds' => 1777,
-            ],
-        ]);
+    expect($resolved['server'])->toBe('http://42.117.243.215:10836');
+    expect($resolved['refresh_skipped'])->toBeFalse();
 
     $settings = ProxySetting::query()->where('scope', 'worker')->first();
 
@@ -84,9 +104,7 @@ test('worker proxy endpoint resolves a rotating proxy from provider response', f
     expect($settings->last_error_message)->toBeNull();
 });
 
-test('worker proxy endpoint reuses cached proxy before requesting a new one', function () {
-    config()->set('services.worker.token', 'worker-secret');
-
+test('refresh worker proxy keeps the current proxy when provider reports cooldown', function () {
     ProxySetting::query()->create([
         'scope' => 'worker',
         'is_enabled' => true,
@@ -96,31 +114,25 @@ test('worker proxy endpoint reuses cached proxy before requesting a new one', fu
         'api_key' => 'proxy-key',
         'carrier' => 'random',
         'province_code' => '0',
+        'last_proxy_http' => 'http://42.117.243.215:10836',
+        'last_proxy_socks5' => 'http://42.117.243.215:30836',
+        'last_network' => 'fpt',
+        'last_location' => 'HaNoi1',
+        'last_expires_in_seconds' => 1777,
+        'last_resolved_at' => now(),
     ]);
 
     Http::fake([
         'https://proxyxoay.shop/api/get.php*' => Http::response([
-            'status' => 100,
-            'message' => 'proxy nay se die sau 1777s',
-            'proxyhttp' => '42.117.243.215:10836::',
-            'proxysocks5' => '42.117.243.215:30836::',
-            'Nha Mang' => 'fpt',
-            'Vi Tri' => 'HaNoi1',
+            'status' => 101,
+            'message' => 'Con 48s moi co the doi proxy',
         ], 200),
     ]);
 
-    $first = $this->withHeader('Authorization', 'Bearer worker-secret')
-        ->getJson('/api/worker/proxy');
+    $resolved = app(ProxyRotationService::class)->refreshWorkerProxy();
 
-    $second = $this->withHeader('Authorization', 'Bearer worker-secret')
-        ->getJson('/api/worker/proxy');
-
-    $first->assertOk()
-        ->assertJsonPath('proxy.cache_hit', false);
-
-    $second->assertOk()
-        ->assertJsonPath('proxy.cache_hit', true)
-        ->assertJsonPath('proxy.server', 'http://42.117.243.215:10836');
-
+    expect($resolved['server'])->toBe('http://42.117.243.215:10836');
+    expect($resolved['refresh_skipped'])->toBeTrue();
+    expect($resolved['provider_message'])->toBe('Con 48s moi co the doi proxy');
     Http::assertSentCount(1);
 });
