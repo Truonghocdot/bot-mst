@@ -83,3 +83,44 @@ test('worker proxy endpoint resolves a rotating proxy from provider response', f
     expect($settings->last_proxy_http)->toBe('http://42.117.243.215:10836');
     expect($settings->last_error_message)->toBeNull();
 });
+
+test('worker proxy endpoint reuses cached proxy before requesting a new one', function () {
+    config()->set('services.worker.token', 'worker-secret');
+
+    ProxySetting::query()->create([
+        'scope' => 'worker',
+        'is_enabled' => true,
+        'provider' => 'proxyxoay.shop',
+        'api_url' => 'https://proxyxoay.shop/api/get.php',
+        'request_method' => 'GET',
+        'api_key' => 'proxy-key',
+        'carrier' => 'random',
+        'province_code' => '0',
+    ]);
+
+    Http::fake([
+        'https://proxyxoay.shop/api/get.php*' => Http::response([
+            'status' => 100,
+            'message' => 'proxy nay se die sau 1777s',
+            'proxyhttp' => '42.117.243.215:10836::',
+            'proxysocks5' => '42.117.243.215:30836::',
+            'Nha Mang' => 'fpt',
+            'Vi Tri' => 'HaNoi1',
+        ], 200),
+    ]);
+
+    $first = $this->withHeader('Authorization', 'Bearer worker-secret')
+        ->getJson('/api/worker/proxy');
+
+    $second = $this->withHeader('Authorization', 'Bearer worker-secret')
+        ->getJson('/api/worker/proxy');
+
+    $first->assertOk()
+        ->assertJsonPath('proxy.cache_hit', false);
+
+    $second->assertOk()
+        ->assertJsonPath('proxy.cache_hit', true)
+        ->assertJsonPath('proxy.server', 'http://42.117.243.215:10836');
+
+    Http::assertSentCount(1);
+});
